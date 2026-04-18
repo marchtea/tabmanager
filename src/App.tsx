@@ -368,6 +368,7 @@ export const App = () => {
             >
               <header
                 className="stack-header"
+                data-testid="stack-header"
                 draggable
                 onDragStart={(event) => writeDragPayload(event, { type: "stack", stackId: stack.id })}
               >

@@ -108,6 +108,32 @@ test.describe("Tab Manager newtab MVP", () => {
     await spaceByName(page, "Ops Renamed").getByTestId("delete-space").click();
     await expect(page.getByTestId("workspace")).toContainText("创建第一个 Space");
   });
+
+  test("reorders stacks by dragging the stack header", async ({ page }) => {
+    await createSpace(page, "Sort Research");
+    await createStack(page, "Alpha");
+    await createStack(page, "Beta");
+    await createStack(page, "Gamma");
+
+    await stackByName(page, "Beta").getByTestId("stack-header").dragTo(stackByName(page, "Alpha"));
+
+    await expectStackOrder(page, ["Beta", "Alpha", "Gamma"]);
+  });
+
+  test("selects a stack search result with Enter", async ({ page }) => {
+    await createSpace(page, "Keyboard Research");
+    await createStack(page, "Keyboard Stack");
+
+    await page.getByTestId("search-entry").click();
+    await page.getByRole("textbox", { name: "搜索 spaces、stacks、tabs、history" }).fill("Keyboard Stack");
+    await expect(page.getByTestId("search-result")).toContainText("Keyboard Stack");
+
+    await page.keyboard.press("Enter");
+
+    await expect(page.getByTestId("search-modal")).toHaveCount(0);
+    await expect(page.getByTestId("workspace")).toContainText("Keyboard Research");
+    await expect(stackByName(page, "Keyboard Stack")).toBeVisible();
+  });
 });
 
 const acceptNextDialog = async (page: import("@playwright/test").Page, value: string) => {
@@ -167,3 +193,13 @@ const spaceByName = (page: import("@playwright/test").Page, name: string) =>
   page.getByTestId("space-group").filter({
     has: page.getByRole("button", { name, exact: true })
   });
+
+const expectStackOrder = async (page: import("@playwright/test").Page, names: string[]) => {
+  await expect.poll(async () => {
+    const headings = await page
+      .getByTestId("stack-column")
+      .locator("h3")
+      .allTextContents();
+    return headings.slice(0, names.length);
+  }).toEqual(names);
+};
