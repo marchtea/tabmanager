@@ -194,7 +194,9 @@ describe("chrome api adapter", () => {
   it("detects the runtime Chrome object when present", () => {
     expect(getChrome()).toBeUndefined();
     vi.stubGlobal("chrome", { runtime: { id: "abc" } });
-    expect(getChrome()).toEqual({ runtime: { id: "abc" } });
+    expect(getChrome()).toBeUndefined();
+    vi.stubGlobal("chrome", { runtime: { id: "abc" }, storage: { local: {} } });
+    expect(getChrome()).toEqual({ runtime: { id: "abc" }, storage: { local: {} } });
     vi.unstubAllGlobals();
   });
 });

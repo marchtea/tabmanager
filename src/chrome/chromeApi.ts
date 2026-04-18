@@ -9,7 +9,11 @@ export const getChrome = (): ChromeLike | undefined => {
   if (typeof chrome === "undefined") {
     return undefined;
   }
-  return chrome as ChromeLike;
+  const chromeApi = chrome as ChromeLike;
+  if (!chromeApi.runtime?.id || !chromeApi.storage?.local) {
+    return undefined;
+  }
+  return chromeApi;
 };
 
 export const isTabManagerUrl = (url: string | undefined, extensionId?: string): boolean => {
