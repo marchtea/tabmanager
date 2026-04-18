@@ -285,6 +285,7 @@ export const App = () => {
                 </button>
                 <button
                   className="tiny-button"
+                  data-testid="rename-space"
                   type="button"
                   title="重命名 Space"
                   onClick={() => renameCurrentSpace(space.id, space.name)}
@@ -293,6 +294,7 @@ export const App = () => {
                 </button>
                 <button
                   className="tiny-button danger"
+                  data-testid="delete-space"
                   type="button"
                   title="删除 Space"
                   onClick={() => removeCurrentSpace(space.id, space.name)}
@@ -361,18 +363,30 @@ export const App = () => {
               data-testid="stack-column"
               id={`stack-${stack.id}`}
               key={stack.id}
-              draggable
-              onDragStart={(event) => writeDragPayload(event, { type: "stack", stackId: stack.id })}
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => handleDropOnStack(stack.id, event)}
             >
-              <header className="stack-header">
+              <header
+                className="stack-header"
+                draggable
+                onDragStart={(event) => writeDragPayload(event, { type: "stack", stackId: stack.id })}
+              >
                 <h3>{stack.name}</h3>
                 <div className="stack-actions">
-                  <button type="button" title="重命名 Stack" onClick={() => renameCurrentStack(stack.id, stack.name)}>
+                  <button
+                    data-testid="rename-stack"
+                    type="button"
+                    title="重命名 Stack"
+                    onClick={() => renameCurrentStack(stack.id, stack.name)}
+                  >
                     ✎
                   </button>
-                  <button type="button" title="删除 Stack" onClick={() => removeCurrentStack(stack.id, stack.name)}>
+                  <button
+                    data-testid="delete-stack"
+                    type="button"
+                    title="删除 Stack"
+                    onClick={() => removeCurrentStack(stack.id, stack.name)}
+                  >
                     ×
                   </button>
                 </div>
@@ -391,7 +405,10 @@ export const App = () => {
                       key={tab.id}
                       type="button"
                       onClick={() => void openUrl(tab.url)}
-                      onDragStart={(event) => writeDragPayload(event, { type: "saved-tab", tabId: tab.id })}
+                      onDragStart={(event) => {
+                        event.stopPropagation();
+                        writeDragPayload(event, { type: "saved-tab", tabId: tab.id });
+                      }}
                     >
                       <span className="favicon">{tab.faviconUrl ? <img src={tab.faviconUrl} alt="" /> : "◇"}</span>
                       <span>
