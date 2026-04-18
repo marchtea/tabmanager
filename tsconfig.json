@@ -17,5 +17,5 @@
     "jsx": "react-jsx",
     "types": ["chrome", "node", "vitest/globals"]
   },
-  "include": ["src", "tests", "vite.config.ts", "playwright.config.ts", "eslint.config.js"]
+  "include": ["src", "tests", "vite.config.ts", "playwright.config.ts", "playwright.extension.config.ts", "eslint.config.js"]
 }
