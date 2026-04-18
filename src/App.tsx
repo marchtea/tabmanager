@@ -264,21 +264,21 @@ export const App = () => {
   };
 
   return (
-    <main className="app-shell">
-      <aside className="sidebar">
+    <main className="app-shell" data-testid="tab-manager-shell">
+      <aside className="sidebar" data-testid="sidebar">
         <div className="brand-row">
           <h1>Tab Manager</h1>
-          <button className="icon-button" type="button" title="新增 Space" onClick={createNewSpace}>
+          <button className="icon-button" data-testid="add-space" type="button" title="新增 Space" onClick={createNewSpace}>
             +
           </button>
         </div>
-        <button className="search-entry" type="button" onClick={() => setIsSearchOpen(true)}>
+        <button className="search-entry" data-testid="search-entry" type="button" onClick={() => setIsSearchOpen(true)}>
           <span>搜索</span>
           <kbd>⌘K</kbd>
         </button>
         <nav className="space-list" aria-label="Spaces">
           {Object.values(workspace.spaces).map((space) => (
-            <section className="space-group" key={space.id}>
+            <section className="space-group" data-testid="space-group" key={space.id}>
               <div className={`space-row ${space.id === activeSpace?.id ? "is-active" : ""}`}>
                 <button type="button" onClick={() => setActiveSpace(space.id)}>
                   {space.name}
@@ -314,13 +314,24 @@ export const App = () => {
         </nav>
       </aside>
 
-      <section className="workspace" onDragOver={(event) => event.preventDefault()} onDrop={handleDropOnWorkspace}>
+      <section
+        className="workspace"
+        data-testid="workspace"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={handleDropOnWorkspace}
+      >
         <header className="workspace-header">
           <div>
             <p className="eyebrow">Workspace</p>
             <h2>{activeSpace?.name ?? "未选择 Space"}</h2>
           </div>
-          <button className="icon-button primary" type="button" title="新增 Stack" onClick={createNewStack}>
+          <button
+            className="icon-button primary"
+            data-testid="add-stack"
+            type="button"
+            title="新增 Stack"
+            onClick={createNewStack}
+          >
             +
           </button>
         </header>
@@ -347,6 +358,7 @@ export const App = () => {
           {activeStacks.map((stack) => (
             <article
               className="stack-column"
+              data-testid="stack-column"
               id={`stack-${stack.id}`}
               key={stack.id}
               draggable
@@ -374,6 +386,7 @@ export const App = () => {
                   return (
                     <button
                       className="saved-tab"
+                      data-testid="saved-tab"
                       draggable
                       key={tab.id}
                       type="button"
@@ -395,7 +408,7 @@ export const App = () => {
         </div>
       </section>
 
-      <aside className="open-tabs-panel">
+      <aside className="open-tabs-panel" data-testid="open-tabs-panel">
         <header>
           <p className="eyebrow">Open Tabs</p>
           <button
@@ -410,12 +423,17 @@ export const App = () => {
         <div className="open-blocks">
           {openBlocks.map((block) => (
             <section className="open-block" key={block.windowId}>
-              <h3 draggable onDragStart={(event) => writeDragPayload(event, { type: "open-block", windowId: block.windowId })}>
+              <h3
+                data-testid="open-block-title"
+                draggable
+                onDragStart={(event) => writeDragPayload(event, { type: "open-block", windowId: block.windowId })}
+              >
                 {block.label}
               </h3>
               {block.tabs.map((tab) => (
                 <button
                   className="open-tab"
+                  data-testid="open-tab"
                   draggable
                   key={`${tab.windowId}:${tab.id}`}
                   type="button"
@@ -473,7 +491,7 @@ const SearchModal = ({
   setSelectedIndex: (value: number) => void;
 }) => (
   <div className="search-backdrop" onMouseDown={onClose}>
-    <section className="search-modal" onMouseDown={(event) => event.stopPropagation()}>
+    <section className="search-modal" data-testid="search-modal" onMouseDown={(event) => event.stopPropagation()}>
       <input
         autoFocus
         placeholder="搜索 spaces、stacks、tabs、history"
@@ -527,6 +545,7 @@ const renderGroup = (
         return (
           <button
             className={index === selectedIndex ? "is-selected" : ""}
+            data-testid="search-result"
             key={result.id}
             type="button"
             onClick={() => onPick(result)}
