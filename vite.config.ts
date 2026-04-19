@@ -13,8 +13,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.resolve("index.html"),
-        background: path.resolve("src/background.ts"),
-        globalSearchOverlay: path.resolve("src/globalSearchOverlay.ts")
+        background: path.resolve("src/background.ts")
       },
       output: {
         entryFileNames: "assets/[name].js"

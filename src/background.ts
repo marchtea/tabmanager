@@ -8,8 +8,8 @@ import { isGlobalSearchMessage } from "./chrome/globalSearchMessages";
 import type { GlobalSearchMessage } from "./chrome/globalSearchMessages";
 import type { ChromeLike } from "./chrome/chromeTypes";
 
-const GLOBAL_SEARCH_COMMAND = "open-global-search";
-const GLOBAL_SEARCH_OVERLAY_FILE = "assets/globalSearchOverlay.js";
+const GLOBAL_SEARCH_COMMAND = "open_global_search";
+const GLOBAL_SEARCH_OVERLAY_FILE = "globalSearchOverlay.js";
 
 const chromeApi = getChrome();
 

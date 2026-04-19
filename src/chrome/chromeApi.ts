@@ -7,7 +7,7 @@ import type { ChromeHistoryRecord, ChromeLike, ChromeTabRecord } from "./chromeT
 
 const STORAGE_KEY = "tabManagerWorkspace";
 const SETTINGS_STORAGE_KEY = "tabManagerSettings";
-const GLOBAL_SEARCH_COMMAND = "open-global-search";
+const GLOBAL_SEARCH_COMMAND = "open_global_search";
 
 export const getChrome = (): ChromeLike | undefined => {
   if (typeof chrome === "undefined") {

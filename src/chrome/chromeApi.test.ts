@@ -312,7 +312,7 @@ describe("chrome api adapter", () => {
       commands: {
         getAll: vi.fn().mockResolvedValue([
           { name: "other", shortcut: "Ctrl+J" },
-          { name: "open-global-search", shortcut: "Ctrl+Shift+K" }
+          { name: "open_global_search", shortcut: "Ctrl+Shift+K" }
         ])
       },
       storage: {

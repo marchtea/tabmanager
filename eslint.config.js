@@ -18,6 +18,19 @@ export default tseslint.config(
     }
   },
   {
+    files: ["public/**/*.js"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      globals: {
+        chrome: "readonly",
+        clearTimeout: "readonly",
+        CustomEvent: "readonly",
+        document: "readonly",
+        setTimeout: "readonly"
+      }
+    }
+  },
+  {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       ecmaVersion: 2022,
