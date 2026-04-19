@@ -7,6 +7,12 @@
   text-rendering: optimizeLegibility;
 }
 
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -29,7 +35,7 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 248px minmax(440px, 1fr) 360px;
+  grid-template-columns: 248px minmax(440px, 1fr);
   height: 100vh;
   overflow: hidden;
 }
@@ -187,7 +193,7 @@ kbd {
 .workspace {
   min-width: 0;
   overflow: hidden;
-  padding: 24px 20px;
+  padding: 24px 392px 24px 20px;
 }
 
 .workspace-header {
@@ -354,30 +360,92 @@ kbd {
 
 .open-tabs-panel {
   display: flex;
+  position: fixed;
+  z-index: 20;
+  top: 16px;
+  right: 16px;
+  bottom: 16px;
+  width: 360px;
   min-width: 0;
   flex-direction: column;
   gap: 14px;
-  padding: 22px 14px;
-  border-left: 1px solid #d7d9ce;
+  overflow: hidden;
+  padding: 16px 12px;
+  border: 1px solid #d7d9ce;
+  border-radius: 8px;
+  box-shadow: 0 18px 60px rgb(31 42 35 / 16%);
 }
 
 .open-blocks {
   display: flex;
+  flex: 1;
+  min-height: 0;
   flex-direction: column;
   gap: 12px;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .open-block {
   display: flex;
+  flex: 0 0 auto;
+  min-height: 0;
   flex-direction: column;
   gap: 8px;
+  overflow: visible;
+  padding: 8px;
+  border: 1px solid #e1e4db;
+  border-radius: 8px;
+  background: #ffffff;
 }
 
-.open-block h3 {
-  padding: 8px 10px;
+.open-block-title {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 0;
   border-radius: 8px;
   color: #516158;
   background: #ecefe7;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-align: left;
+}
+
+.open-block.is-collapsed {
+  gap: 0;
+}
+
+.open-tab {
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 8px;
+  min-height: 48px;
+  padding: 7px 8px;
+}
+
+.open-tab .favicon {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+}
+
+.open-tab .favicon img {
+  width: 14px;
+  height: 14px;
+}
+
+.open-tab strong {
+  line-height: 1.2;
+}
+
+.open-tab small {
+  margin-top: 2px;
 }
 
 .search-backdrop {
@@ -454,6 +522,10 @@ kbd {
 
   .app-shell {
     grid-template-columns: 210px minmax(360px, 1fr);
+  }
+
+  .workspace {
+    padding-right: 20px;
   }
 
   .open-tabs-panel {

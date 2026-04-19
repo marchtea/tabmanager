@@ -72,6 +72,7 @@ export const App = () => {
   const [query, setQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [selectedResultIndex, setSelectedResultIndex] = useState(0);
+  const [collapsedOpenBlockIds, setCollapsedOpenBlockIds] = useState<ReadonlySet<number>>(() => new Set());
   const [loaded, setLoaded] = useState(false);
 
   const activeSpace = getActiveSpace(workspace);
@@ -263,6 +264,18 @@ export const App = () => {
     }
   };
 
+  const toggleOpenBlock = (windowId: number) => {
+    setCollapsedOpenBlockIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      if (nextIds.has(windowId)) {
+        nextIds.delete(windowId);
+        return nextIds;
+      }
+      nextIds.add(windowId);
+      return nextIds;
+    });
+  };
+
   return (
     <main className="app-shell" data-testid="tab-manager-shell">
       <aside className="sidebar" data-testid="sidebar">
@@ -440,31 +453,41 @@ export const App = () => {
         </header>
         <div className="open-blocks">
           {openBlocks.map((block) => (
-            <section className="open-block" key={block.windowId}>
-              <h3
+            <section
+              className={`open-block ${collapsedOpenBlockIds.has(block.windowId) ? "is-collapsed" : ""}`}
+              data-testid="open-block"
+              key={block.windowId}
+            >
+              <button
+                aria-expanded={!collapsedOpenBlockIds.has(block.windowId)}
+                className="open-block-title"
                 data-testid="open-block-title"
                 draggable
+                type="button"
+                onClick={() => toggleOpenBlock(block.windowId)}
                 onDragStart={(event) => writeDragPayload(event, { type: "open-block", windowId: block.windowId })}
               >
-                {block.label}
-              </h3>
-              {block.tabs.map((tab) => (
-                <button
-                  className="open-tab"
-                  data-testid="open-tab"
-                  draggable
-                  key={`${tab.windowId}:${tab.id}`}
-                  type="button"
-                  onClick={() => void openUrl(tab.url)}
-                  onDragStart={(event) => writeDragPayload(event, { type: "open-tab", tab })}
-                >
-                  <span className="favicon">{tab.faviconUrl ? <img src={tab.faviconUrl} alt="" /> : "◇"}</span>
-                  <span>
-                    <strong>{tab.title}</strong>
-                    <small>{tab.url}</small>
-                  </span>
-                </button>
-              ))}
+                <span aria-hidden="true">{collapsedOpenBlockIds.has(block.windowId) ? "▸" : "▾"}</span>
+                <span>{block.label}</span>
+              </button>
+              {!collapsedOpenBlockIds.has(block.windowId) &&
+                block.tabs.map((tab) => (
+                  <button
+                    className="open-tab"
+                    data-testid="open-tab"
+                    draggable
+                    key={`${tab.windowId}:${tab.id}`}
+                    type="button"
+                    onClick={() => void openUrl(tab.url)}
+                    onDragStart={(event) => writeDragPayload(event, { type: "open-tab", tab })}
+                  >
+                    <span className="favicon">{tab.faviconUrl ? <img src={tab.faviconUrl} alt="" /> : "◇"}</span>
+                    <span>
+                      <strong>{tab.title}</strong>
+                      <small>{tab.url}</small>
+                    </span>
+                  </button>
+                ))}
             </section>
           ))}
         </div>
@@ -599,7 +622,11 @@ const readDragPayload = (event: React.DragEvent): DragPayload | undefined => {
 };
 
 const scrollStackIntoView = (stackId: string) => {
-  window.setTimeout(() => document.getElementById(`stack-${stackId}`)?.scrollIntoView({ behavior: "smooth", inline: "center" }));
+  window.setTimeout(() =>
+    document
+      .getElementById(`stack-${stackId}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" })
+  );
 };
 
 const formatStackName = (timestamp: number): string =>

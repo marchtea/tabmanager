@@ -21,6 +21,24 @@ test.describe("Tab Manager newtab MVP", () => {
     );
   });
 
+  test("collapses and expands an open window block from its title", async ({ page }) => {
+    const title = page.getByTestId("open-block-title").filter({ hasText: "Window 1" });
+    const block = page.getByTestId("open-block").filter({ has: title });
+
+    await expect(block.getByTestId("open-tab")).toHaveCount(3);
+    await expect(title).toHaveAttribute("aria-expanded", "true");
+
+    await title.click();
+
+    await expect(title).toHaveAttribute("aria-expanded", "false");
+    await expect(block.getByTestId("open-tab")).toHaveCount(0);
+
+    await title.click();
+
+    await expect(title).toHaveAttribute("aria-expanded", "true");
+    await expect(block.getByTestId("open-tab")).toHaveCount(3);
+  });
+
   test("creates a space and stack, then saves an open tab by drag and drop", async ({ page }) => {
     await acceptNextDialog(page, "Research");
     await page.getByTestId("add-space").click();
@@ -133,6 +151,57 @@ test.describe("Tab Manager newtab MVP", () => {
     await expect(page.getByTestId("search-modal")).toHaveCount(0);
     await expect(page.getByTestId("workspace")).toContainText("Keyboard Research");
     await expect(stackByName(page, "Keyboard Stack")).toBeVisible();
+  });
+
+  test("keeps the app shell pinned when selecting a stack from the sidebar", async ({ page }) => {
+    await createSpace(page, "Pinned Research");
+    await createStack(page, "Primary Reading");
+    await createStack(page, "Secondary Reading");
+
+    const before = await page.getByTestId("tab-manager-shell").evaluate((element) => ({
+      top: element.getBoundingClientRect().top,
+      scrollY: window.scrollY
+    }));
+
+    await page
+      .getByRole("navigation", { name: "Spaces" })
+      .getByRole("button", { name: "Secondary Reading", exact: true })
+      .click();
+
+    await expect.poll(async () =>
+      page.getByTestId("tab-manager-shell").evaluate((element) => ({
+        top: element.getBoundingClientRect().top,
+        scrollY: window.scrollY
+      }))
+    ).toEqual(before);
+  });
+
+  test("renders open tabs in a floating, outer-scrolling, compact right panel", async ({ page }) => {
+    const panel = page.getByTestId("open-tabs-panel");
+    await expect(panel).toBeVisible();
+
+    await expect.poll(async () =>
+      panel.evaluate((element) => {
+        const panelStyle = window.getComputedStyle(element);
+        const blocks = element.querySelector(".open-blocks");
+        const block = element.querySelector(".open-block");
+        const tab = element.querySelector("[data-testid='open-tab']");
+
+        return {
+          panelPosition: panelStyle.position,
+          blocksOverflowY: blocks ? window.getComputedStyle(blocks).overflowY : "",
+          blockFlex: block ? window.getComputedStyle(block).flex : "",
+          blockOverflowY: block ? window.getComputedStyle(block).overflowY : "",
+          tabMinHeight: tab ? window.getComputedStyle(tab).minHeight : ""
+        };
+      })
+    ).toEqual({
+      panelPosition: "fixed",
+      blocksOverflowY: "auto",
+      blockFlex: "0 0 auto",
+      blockOverflowY: "visible",
+      tabMinHeight: "48px"
+    });
   });
 });
 
