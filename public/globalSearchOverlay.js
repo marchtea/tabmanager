@@ -147,6 +147,10 @@
   let flatResults = [];
   let selectedIndex = 0;
   let timer = 0;
+  const stopKeyboardEvent = (event) => {
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+  };
 
   const close = () => {
     delete globalThis.__TAB_MANAGER_GLOBAL_SEARCH__;
@@ -236,8 +240,15 @@
     resultList.append(group);
   };
 
-  input.addEventListener("input", search);
+  input.addEventListener("beforeinput", stopKeyboardEvent);
+  input.addEventListener("keypress", stopKeyboardEvent);
+  input.addEventListener("keyup", stopKeyboardEvent);
+  input.addEventListener("input", (event) => {
+    stopKeyboardEvent(event);
+    search();
+  });
   input.addEventListener("keydown", (event) => {
+    stopKeyboardEvent(event);
     if (event.key === "Escape") {
       event.preventDefault();
       close();

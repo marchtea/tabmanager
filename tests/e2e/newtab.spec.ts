@@ -328,6 +328,42 @@ test.describe("Tab Manager newtab MVP", () => {
       }))
     ).toMatchObject({ overflowY: "auto" });
   });
+
+  test("global search overlay keeps typing events inside the overlay", async ({ page }) => {
+    await page.evaluate(() => {
+      Object.defineProperty(window, "chrome", {
+        configurable: true,
+        value: {
+          runtime: {
+            sendMessage: async () => ({
+              groups: {
+                spaces: [],
+                stacks: [],
+                savedTabs: [],
+                openTabs: [],
+                history: []
+              }
+            })
+          }
+        }
+      });
+      const seenEvents: string[] = [];
+      for (const eventName of ["beforeinput", "input", "keydown", "keypress", "keyup"]) {
+        window.addEventListener(eventName, () => seenEvents.push(eventName));
+      }
+      Object.assign(window, { __TAB_MANAGER_SEEN_KEYBOARD_EVENTS__: seenEvents });
+    });
+
+    await page.addScriptTag({ url: "/globalSearchOverlay.js" });
+    await page.keyboard.type("abc");
+    await page.keyboard.press("ArrowDown");
+
+    await expect.poll(async () =>
+      page.evaluate(() =>
+        (window as unknown as { __TAB_MANAGER_SEEN_KEYBOARD_EVENTS__: string[] }).__TAB_MANAGER_SEEN_KEYBOARD_EVENTS__
+      )
+    ).toEqual([]);
+  });
 });
 
 test.describe("Open tabs panel window moves", () => {
