@@ -14,6 +14,11 @@ export type ChromeHistoryRecord = {
   lastVisitTime?: number;
 };
 
+export type ChromeWindowRecord = {
+  id?: number;
+  tabs?: ChromeTabRecord[];
+};
+
 export type ChromeLike = {
   runtime?: {
     id?: string;
@@ -26,8 +31,10 @@ export type ChromeLike = {
       moveProperties: { windowId?: number; index?: number }
     ) => Promise<ChromeTabRecord | undefined>;
     create?: (createProperties: { url: string }) => Promise<unknown>;
+    remove?: (tabIds: number | number[]) => Promise<void>;
   };
   windows?: {
+    getAll?: (getInfo: { populate: boolean }) => Promise<ChromeWindowRecord[]>;
     update?: (windowId: number, updateInfo: Record<string, unknown>) => Promise<unknown>;
   };
   history?: {

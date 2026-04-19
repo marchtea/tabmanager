@@ -24,7 +24,7 @@ export const isTabManagerUrl = (url: string | undefined, extensionId?: string): 
 };
 
 export const groupOpenTabs = async (chromeApi: ChromeLike): Promise<OpenTabBlock[]> => {
-  const tabs = await chromeApi.tabs?.query?.({}) ?? [];
+  const tabs = await listOpenTabRecords(chromeApi);
   const extensionId = chromeApi.runtime?.id;
   const grouped = tabs
     .filter((tab) => !isTabManagerUrl(tab.url, extensionId))
@@ -46,7 +46,7 @@ export const groupOpenTabs = async (chromeApi: ChromeLike): Promise<OpenTabBlock
 };
 
 export const focusOrCreateTab = async (chromeApi: ChromeLike, url: string): Promise<void> => {
-  const openTabs = await chromeApi.tabs?.query?.({}) ?? [];
+  const openTabs = await listOpenTabRecords(chromeApi);
   const normalized = normalizeUrl(url);
   const existing = openTabs.find((tab) => tab.id && normalizeUrl(tab.url ?? "") === normalized);
 
@@ -67,6 +67,49 @@ export const moveOpenTabToWindow = async (
   targetWindowId: number
 ): Promise<void> => {
   await chromeApi.tabs?.move?.(tabId, { windowId: targetWindowId, index: -1 });
+};
+
+export const closeDuplicateOpenTabs = async (chromeApi: ChromeLike): Promise<number> => {
+  const tabs = await listOpenTabRecords(chromeApi);
+  const extensionId = chromeApi.runtime?.id;
+  const seenUrls = new Set<string>();
+  const duplicateTabIds = tabs.flatMap((tab) => {
+    if (!tab.id || !tab.url || isTabManagerUrl(tab.url, extensionId)) {
+      return [];
+    }
+
+    const normalizedUrl = normalizeUrl(tab.url);
+    if (seenUrls.has(normalizedUrl)) {
+      return [tab.id];
+    }
+
+    seenUrls.add(normalizedUrl);
+    return [];
+  });
+
+  if (duplicateTabIds.length === 0 || !chromeApi.tabs?.remove) {
+    return 0;
+  }
+
+  await chromeApi.tabs.remove(duplicateTabIds);
+  return duplicateTabIds.length;
+};
+
+const listOpenTabRecords = async (chromeApi: ChromeLike): Promise<ChromeTabRecord[]> => {
+  const windows = await chromeApi.windows?.getAll?.({ populate: true });
+  const populatedTabs =
+    windows?.flatMap((windowRecord) =>
+      (windowRecord.tabs ?? []).map((tab) => ({
+        ...tab,
+        windowId: tab.windowId ?? windowRecord.id
+      }))
+    ) ?? [];
+
+  if (populatedTabs.length > 0) {
+    return populatedTabs;
+  }
+
+  return await chromeApi.tabs?.query?.({}) ?? [];
 };
 
 export const getMetaDescription = async (

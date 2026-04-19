@@ -257,6 +257,65 @@ test.describe("Open tabs panel window moves", () => {
   });
 });
 
+test.describe("Open tabs panel duplicate cleanup", () => {
+  test("closes duplicate open URLs from the floating panel", async ({ page }) => {
+    await page.addInitScript(() => {
+      const tabs = [
+        { id: 1, windowId: 10, title: "React", url: "https://react.dev/" },
+        { id: 2, windowId: 10, title: "Vite", url: "https://vite.dev" },
+        { id: 3, windowId: 20, title: "React Duplicate", url: "https://react.dev/#docs" },
+        { id: 4, windowId: 20, title: "Docs", url: "https://docs.test" },
+        { id: 5, windowId: 30, title: "Vite Duplicate", url: "https://vite.dev/" }
+      ];
+
+      Object.defineProperty(window, "chrome", {
+        configurable: true,
+        value: {
+          runtime: { id: "abc" },
+          storage: {
+            local: {
+              get: async () => ({}),
+              set: async () => undefined
+            }
+          },
+          tabs: {
+            query: async () => tabs.map((tab) => ({ ...tab })),
+            remove: async (tabIds: number | number[]) => {
+              const ids = Array.isArray(tabIds) ? tabIds : [tabIds];
+              for (const id of ids) {
+                const index = tabs.findIndex((tab) => tab.id === id);
+                if (index >= 0) {
+                  tabs.splice(index, 1);
+                }
+              }
+            }
+          },
+          windows: {
+            getAll: async () => [
+              { id: 10, tabs: tabs.filter((tab) => tab.windowId === 10).map((tab) => ({ ...tab })) },
+              { id: 20, tabs: tabs.filter((tab) => tab.windowId === 20).map((tab) => ({ ...tab })) },
+              { id: 30, tabs: tabs.filter((tab) => tab.windowId === 30).map((tab) => ({ ...tab })) }
+            ]
+          }
+        }
+      });
+    });
+
+    await page.goto("/");
+    await expect(page.getByTestId("tab-manager-shell")).toBeVisible();
+    await expect(page.getByTestId("open-tab")).toHaveCount(5);
+
+    await page.getByTestId("dedupe-open-tabs").click();
+
+    await expect(page.getByTestId("open-tab")).toHaveCount(3);
+    await expect(page.getByTestId("dedupe-open-tabs-status")).toHaveText("已关闭 2 个重复 Tab");
+    await expect(page.getByTestId("open-tabs-panel")).toContainText("React");
+    await expect(page.getByTestId("open-tabs-panel")).toContainText("Vite");
+    await expect(page.getByTestId("open-tabs-panel")).not.toContainText("React Duplicate");
+    await expect(page.getByTestId("open-tabs-panel")).not.toContainText("Vite Duplicate");
+  });
+});
+
 const acceptNextDialog = async (page: import("@playwright/test").Page, value: string) => {
   page.once("dialog", async (dialog) => {
     await dialog.accept(value);

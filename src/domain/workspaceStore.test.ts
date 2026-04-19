@@ -263,4 +263,14 @@ describe("workspace store", () => {
     expect(normalizeUrl("https://example.com/path/#intro")).toBe("https://example.com/path");
     expect(normalizeUrl(" NOT A URL/#Hash/ ")).toBe("not a url");
   });
+
+  it("removes common tracking query parameters while preserving content parameters", () => {
+    expect(normalizeUrl("https://t.bilibili.com/?spm_id_from=333.1007.0.0")).toBe("https://t.bilibili.com");
+    expect(normalizeUrl("https://t.bilibili.com/?tab=video&spm_id_from=333.1007.0.0")).toBe(
+      "https://t.bilibili.com/?tab=video"
+    );
+    expect(normalizeUrl("https://example.com/read?utm_source=x&utm_medium=y&id=42&fbclid=abc")).toBe(
+      "https://example.com/read?id=42"
+    );
+  });
 });

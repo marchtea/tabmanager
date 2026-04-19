@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  closeDuplicateOpenTabs,
   focusOrCreateTab,
   getChrome,
   getMetaDescription,
@@ -103,6 +104,76 @@ describe("chrome api adapter", () => {
 
   it("ignores open tab window moves when the Chrome move API is unavailable", async () => {
     await expect(moveOpenTabToWindow({}, 4, 12)).resolves.toBeUndefined();
+  });
+
+  it("closes duplicate open tabs across all Chrome windows and keeps the first matching URL", async () => {
+    const chrome = {
+      runtime: { id: "abc" },
+      tabs: {
+        query: vi.fn().mockResolvedValue([
+          { id: 1, windowId: 10, title: "Manager", url: "chrome-extension://abc/index.html" },
+          { id: 2, windowId: 10, title: "React", url: "https://react.dev/" },
+          { id: 3, windowId: 20, title: "React Docs", url: "https://react.dev/#docs" },
+          { id: 4, windowId: 20, title: "Vite", url: "https://vite.dev" },
+          { id: 5, windowId: 30, title: "Vite Duplicate", url: "https://vite.dev/" }
+        ]),
+        remove: vi.fn().mockResolvedValue(undefined)
+      }
+    } satisfies ChromeLike;
+
+    await expect(closeDuplicateOpenTabs(chrome)).resolves.toBe(2);
+
+    expect(chrome.tabs.remove).toHaveBeenCalledWith([3, 5]);
+  });
+
+  it("uses populated Chrome windows to find duplicate tabs outside the current window", async () => {
+    const chrome = {
+      runtime: { id: "abc" },
+      tabs: {
+        query: vi.fn().mockResolvedValue([{ id: 2, windowId: 10, title: "React", url: "https://react.dev/" }]),
+        remove: vi.fn().mockResolvedValue(undefined)
+      },
+      windows: {
+        getAll: vi.fn().mockResolvedValue([
+          {
+            id: 10,
+            tabs: [
+              { id: 2, title: "React", url: "https://react.dev/" },
+              { id: 4, title: "Vite", url: "https://vite.dev" }
+            ]
+          },
+          {
+            id: 20,
+            tabs: [
+              { id: 3, title: "React Duplicate", url: "https://react.dev/#docs" },
+              { id: 5, title: "Docs", url: "https://docs.test" }
+            ]
+          }
+        ])
+      }
+    } satisfies ChromeLike;
+
+    await expect(closeDuplicateOpenTabs(chrome)).resolves.toBe(1);
+
+    expect(chrome.windows.getAll).toHaveBeenCalledWith({ populate: true });
+    expect(chrome.tabs.query).not.toHaveBeenCalled();
+    expect(chrome.tabs.remove).toHaveBeenCalledWith([3]);
+  });
+
+  it("does not close tabs when no duplicate open URLs are found", async () => {
+    const chrome = {
+      tabs: {
+        query: vi.fn().mockResolvedValue([
+          { id: 2, windowId: 10, title: "React", url: "https://react.dev" },
+          { id: 4, windowId: 20, title: "Vite", url: "https://vite.dev" }
+        ]),
+        remove: vi.fn().mockResolvedValue(undefined)
+      }
+    } satisfies ChromeLike;
+
+    await expect(closeDuplicateOpenTabs(chrome)).resolves.toBe(0);
+
+    expect(chrome.tabs.remove).not.toHaveBeenCalled();
   });
 
   it("returns undefined when meta description injection fails", async () => {

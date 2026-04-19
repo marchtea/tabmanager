@@ -14,10 +14,31 @@ export const createIdGenerator = (prefix: string): IdGenerator => {
   return () => `${prefix}-${Date.now().toString(36)}-${(count += 1).toString(36)}`;
 };
 
+const TRACKING_PARAM_NAMES = new Set([
+  "fbclid",
+  "gclid",
+  "igshid",
+  "mc_cid",
+  "mc_eid",
+  "mkt_tok",
+  "msclkid",
+  "spm",
+  "spm_id_from",
+  "vero_conv",
+  "vero_id",
+  "yclid"
+]);
+
 export const normalizeUrl = (url: string): string => {
   try {
     const parsed = new URL(url);
     parsed.hash = "";
+    for (const key of [...parsed.searchParams.keys()]) {
+      const normalizedKey = key.toLowerCase();
+      if (normalizedKey.startsWith("utm_") || TRACKING_PARAM_NAMES.has(normalizedKey)) {
+        parsed.searchParams.delete(key);
+      }
+    }
     const normalized = parsed.toString();
     return normalized.endsWith("/") ? normalized.slice(0, -1) : normalized;
   } catch {

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  closeDuplicateOpenTabs,
   focusOrCreateTab,
   getChrome,
   groupOpenTabs,
@@ -74,6 +75,8 @@ export const App = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [selectedResultIndex, setSelectedResultIndex] = useState(0);
   const [collapsedOpenBlockIds, setCollapsedOpenBlockIds] = useState<ReadonlySet<number>>(() => new Set());
+  const [isDeduplicating, setIsDeduplicating] = useState(false);
+  const [dedupeStatus, setDedupeStatus] = useState("");
   const [loaded, setLoaded] = useState(false);
 
   const activeSpace = getActiveSpace(workspace);
@@ -83,6 +86,14 @@ export const App = () => {
     [historyEntries, openBlocks, query, workspace]
   );
   const flatResults = flattenSearchGroups(searchGroups);
+
+  const refreshOpenTabs = useCallback(async () => {
+    if (!chromeApi) {
+      return;
+    }
+    const blocks = await groupOpenTabs(chromeApi);
+    setOpenBlocks(blocks);
+  }, [chromeApi]);
 
   useEffect(() => {
     const load = async () => {
@@ -94,15 +105,8 @@ export const App = () => {
   }, [chromeApi]);
 
   useEffect(() => {
-    if (!chromeApi) {
-      return;
-    }
-    const refresh = async () => {
-      const blocks = await groupOpenTabs(chromeApi);
-      setOpenBlocks(blocks);
-    };
-    void refresh();
-  }, [chromeApi]);
+    void refreshOpenTabs();
+  }, [refreshOpenTabs]);
 
   useEffect(() => {
     if (!loaded) {
@@ -252,6 +256,22 @@ export const App = () => {
     }
 
     setOpenBlocks((blocks) => moveOpenTabBetweenBlocks(blocks, payload.tab, targetWindowId));
+  };
+
+  const dedupeOpenTabs = async () => {
+    if (!chromeApi || isDeduplicating) {
+      return;
+    }
+
+    setIsDeduplicating(true);
+    setDedupeStatus("");
+    try {
+      const closedCount = await closeDuplicateOpenTabs(chromeApi);
+      await refreshOpenTabs();
+      setDedupeStatus(closedCount > 0 ? `已关闭 ${closedCount} 个重复 Tab` : "没有重复 Tab");
+    } finally {
+      setIsDeduplicating(false);
+    }
   };
 
   const renameCurrentSpace = (spaceId: string, currentName: string) => {
@@ -461,15 +481,32 @@ export const App = () => {
       <aside className="open-tabs-panel" data-testid="open-tabs-panel">
         <header>
           <p className="eyebrow">Open Tabs</p>
-          <button
-            className="tiny-button"
-            type="button"
-            title="刷新"
-            onClick={() => chromeApi && void groupOpenTabs(chromeApi).then(setOpenBlocks)}
-          >
-            ↻
-          </button>
+          <div className="open-tabs-actions">
+            <button
+              className="tiny-button"
+              data-testid="dedupe-open-tabs"
+              disabled={!chromeApi || isDeduplicating}
+              type="button"
+              title="去除重复 Tab"
+              onClick={() => void dedupeOpenTabs()}
+            >
+              ⧉
+            </button>
+            <button
+              className="tiny-button"
+              type="button"
+              title="刷新"
+              onClick={() => void refreshOpenTabs()}
+            >
+              ↻
+            </button>
+          </div>
         </header>
+        {dedupeStatus && (
+          <p className="open-tabs-status" data-testid="dedupe-open-tabs-status" role="status">
+            {dedupeStatus}
+          </p>
+        )}
         <div className="open-blocks">
           {openBlocks.map((block) => (
             <section
