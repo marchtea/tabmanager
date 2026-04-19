@@ -6,6 +6,7 @@ import {
   loadWorkspace,
   groupOpenTabs,
   isTabManagerUrl,
+  moveOpenTabToWindow,
   saveWorkspace,
   searchRecentHistory
 } from "./chromeApi";
@@ -86,6 +87,22 @@ describe("chrome api adapter", () => {
     await focusOrCreateTab(chrome, "https://example.com/path");
 
     expect(chrome.tabs.update).toHaveBeenCalledWith(4, { active: true });
+  });
+
+  it("moves an open tab into another Chrome window at the end", async () => {
+    const chrome = {
+      tabs: {
+        move: vi.fn().mockResolvedValue({})
+      }
+    } satisfies ChromeLike;
+
+    await moveOpenTabToWindow(chrome, 4, 12);
+
+    expect(chrome.tabs.move).toHaveBeenCalledWith(4, { windowId: 12, index: -1 });
+  });
+
+  it("ignores open tab window moves when the Chrome move API is unavailable", async () => {
+    await expect(moveOpenTabToWindow({}, 4, 12)).resolves.toBeUndefined();
   });
 
   it("returns undefined when meta description injection fails", async () => {

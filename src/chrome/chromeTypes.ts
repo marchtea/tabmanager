@@ -21,6 +21,10 @@ export type ChromeLike = {
   tabs?: {
     query?: (queryInfo: Record<string, unknown>) => Promise<ChromeTabRecord[]>;
     update?: (tabId: number, updateProperties: Record<string, unknown>) => Promise<unknown>;
+    move?: (
+      tabId: number,
+      moveProperties: { windowId?: number; index?: number }
+    ) => Promise<ChromeTabRecord | undefined>;
     create?: (createProperties: { url: string }) => Promise<unknown>;
   };
   windows?: {

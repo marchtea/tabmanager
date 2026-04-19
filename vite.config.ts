@@ -1,8 +1,11 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { execFileSync } from "node:child_process";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { defineConfig, type Plugin } from "vite";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), extensionBranchDescriptionPlugin()],
   build: {
     outDir: "dist",
     sourcemap: true,
@@ -26,3 +29,60 @@ export default defineConfig({
     }
   }
 });
+
+const manifestDescriptionLimit = 132;
+const generatedDescriptionPrefix = "Tab Manager workspace manager.";
+
+function extensionBranchDescriptionPlugin(): Plugin {
+  return {
+    name: "tabmanager-extension-branch-description",
+    apply: "build",
+    async closeBundle() {
+      const manifestPath = path.resolve("dist", "manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+        description?: string;
+      };
+
+      await writeFile(
+        manifestPath,
+        `${JSON.stringify(
+          {
+            ...manifest,
+            description: formatExtensionDescription(getGitBranchName())
+          },
+          null,
+          2
+        )}\n`
+      );
+    }
+  };
+}
+
+function getGitBranchName(): string {
+  const branch = runGit(["branch", "--show-current"]);
+  return branch || runGit(["rev-parse", "--short", "HEAD"]) || "unknown";
+}
+
+function runGit(args: string[]): string {
+  try {
+    return execFileSync("git", args, {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+function formatExtensionDescription(branchName: string): string {
+  const suffixPrefix = " Branch: ";
+  const maxBranchLength =
+    manifestDescriptionLimit - generatedDescriptionPrefix.length - suffixPrefix.length;
+  const branch =
+    branchName.length > maxBranchLength
+      ? `${branchName.slice(0, Math.max(0, maxBranchLength - 3))}...`
+      : branchName;
+
+  return `${generatedDescriptionPrefix}${suffixPrefix}${branch}`;
+}

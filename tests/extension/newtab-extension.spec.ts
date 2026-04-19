@@ -1,10 +1,13 @@
 import { chromium, expect, test } from "@playwright/test";
+import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
 const extensionPath = path.resolve("dist");
 const requiredPermissions = ["storage", "tabs", "windows", "history", "scripting"];
+const execFileAsync = promisify(execFile);
 
 test.describe("built Chrome extension package", () => {
   test("emits the MV3 manifest required by the PRD", async () => {
@@ -14,6 +17,13 @@ test.describe("built Chrome extension package", () => {
     expect(manifest.chrome_url_overrides).toEqual({ newtab: "index.html" });
     expect(manifest.permissions).toEqual(expect.arrayContaining(requiredPermissions));
     expect(manifest.host_permissions).toContain("<all_urls>");
+  });
+
+  test("includes the current git branch in the generated extension description", async () => {
+    const manifest = JSON.parse(await readFile(path.join(extensionPath, "manifest.json"), "utf8"));
+    const currentBranch = await getCurrentBranchName();
+
+    expect(manifest.description).toContain(`Branch: ${currentBranch}`);
   });
 
   test("loads dist as a headed Chrome extension and overrides the new tab page", async () => {
@@ -64,3 +74,8 @@ test.describe("built Chrome extension package", () => {
     }
   });
 });
+
+const getCurrentBranchName = async (): Promise<string> => {
+  const { stdout } = await execFileAsync("git", ["branch", "--show-current"], { cwd: process.cwd() });
+  return stdout.trim();
+};

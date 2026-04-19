@@ -61,6 +61,14 @@ export const focusOrCreateTab = async (chromeApi: ChromeLike, url: string): Prom
   await chromeApi.tabs?.create?.({ url });
 };
 
+export const moveOpenTabToWindow = async (
+  chromeApi: ChromeLike,
+  tabId: number,
+  targetWindowId: number
+): Promise<void> => {
+  await chromeApi.tabs?.move?.(tabId, { windowId: targetWindowId, index: -1 });
+};
+
 export const getMetaDescription = async (
   chromeApi: ChromeLike,
   tabId: number

@@ -205,6 +205,58 @@ test.describe("Tab Manager newtab MVP", () => {
   });
 });
 
+test.describe("Open tabs panel window moves", () => {
+  test("moves a dragged open tab into another open window block", async ({ page }) => {
+    await page.addInitScript(() => {
+      const tabs = [
+        { id: 1, windowId: 10, title: "Vite", url: "https://vite.dev" },
+        { id: 2, windowId: 10, title: "React", url: "https://react.dev" },
+        { id: 3, windowId: 20, title: "Docs", url: "https://docs.test" }
+      ];
+
+      Object.defineProperty(window, "chrome", {
+        configurable: true,
+        value: {
+          runtime: { id: "abc" },
+          storage: {
+            local: {
+              get: async () => ({}),
+              set: async () => undefined
+            }
+          },
+          tabs: {
+            query: async () => tabs.map((tab) => ({ ...tab })),
+            move: async (tabId: number, moveProperties: { windowId?: number }) => {
+              const tab = tabs.find((item) => item.id === tabId);
+              if (!tab || typeof moveProperties.windowId !== "number") {
+                return undefined;
+              }
+              tab.windowId = moveProperties.windowId;
+              return { ...tab };
+            }
+          }
+        }
+      });
+    });
+
+    await page.goto("/");
+    await expect(page.getByTestId("tab-manager-shell")).toBeVisible();
+
+    const source = page.getByTestId("open-block").filter({ hasText: "Window 1" });
+    const target = page.getByTestId("open-block").filter({ hasText: "Window 2" });
+
+    await expect(source.getByTestId("open-tab").filter({ hasText: "React" })).toBeVisible();
+    await expect(target.getByTestId("open-tab").filter({ hasText: "Docs" })).toBeVisible();
+
+    await source.getByTestId("open-tab").filter({ hasText: "React" }).dragTo(target);
+
+    await expect(source.getByTestId("open-tab").filter({ hasText: "React" })).toHaveCount(0);
+    await expect(target.getByTestId("open-tab").filter({ hasText: "React" })).toBeVisible();
+    await expect(source.getByTestId("open-block-title")).toContainText("Window 1 · 1 tabs");
+    await expect(target.getByTestId("open-block-title")).toContainText("Window 2 · 2 tabs");
+  });
+});
+
 const acceptNextDialog = async (page: import("@playwright/test").Page, value: string) => {
   page.once("dialog", async (dialog) => {
     await dialog.accept(value);

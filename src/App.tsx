@@ -4,6 +4,7 @@ import {
   getChrome,
   groupOpenTabs,
   loadWorkspace,
+  moveOpenTabToWindow,
   saveWorkspace,
   searchRecentHistory
 } from "./chrome/chromeApi";
@@ -235,6 +236,24 @@ export const App = () => {
     );
   };
 
+  const handleDropOnOpenBlock = async (targetWindowId: number, event: React.DragEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const payload = readDragPayload(event);
+    if (payload?.type !== "open-tab" || payload.tab.windowId === targetWindowId) {
+      return;
+    }
+
+    if (chromeApi) {
+      await moveOpenTabToWindow(chromeApi, payload.tab.id, targetWindowId);
+      setOpenBlocks(await groupOpenTabs(chromeApi));
+      return;
+    }
+
+    setOpenBlocks((blocks) => moveOpenTabBetweenBlocks(blocks, payload.tab, targetWindowId));
+  };
+
   const renameCurrentSpace = (spaceId: string, currentName: string) => {
     const name = prompt("Space 名称", currentName);
     if (name) {
@@ -457,6 +476,11 @@ export const App = () => {
               className={`open-block ${collapsedOpenBlockIds.has(block.windowId) ? "is-collapsed" : ""}`}
               data-testid="open-block"
               key={block.windowId}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+              }}
+              onDrop={(event) => void handleDropOnOpenBlock(block.windowId, event)}
             >
               <button
                 aria-expanded={!collapsedOpenBlockIds.has(block.windowId)}
@@ -479,7 +503,10 @@ export const App = () => {
                     key={`${tab.windowId}:${tab.id}`}
                     type="button"
                     onClick={() => void openUrl(tab.url)}
-                    onDragStart={(event) => writeDragPayload(event, { type: "open-tab", tab })}
+                    onDragStart={(event) => {
+                      event.stopPropagation();
+                      writeDragPayload(event, { type: "open-tab", tab });
+                    }}
                   >
                     <span className="favicon">{tab.faviconUrl ? <img src={tab.faviconUrl} alt="" /> : "◇"}</span>
                     <span>
@@ -607,6 +634,40 @@ const flattenSearchGroups = (groups: SearchGroups): SearchResult[] => [
   ...groups.openTabs,
   ...groups.history
 ];
+
+const moveOpenTabBetweenBlocks = (
+  blocks: OpenTabBlock[],
+  tab: OpenTab,
+  targetWindowId: number
+): OpenTabBlock[] => {
+  const sourceWindowId = tab.windowId;
+  const hasSourceBlock = blocks.some((block) => block.windowId === sourceWindowId);
+  const hasTargetBlock = blocks.some((block) => block.windowId === targetWindowId);
+  if (!hasSourceBlock || !hasTargetBlock || sourceWindowId === targetWindowId) {
+    return blocks;
+  }
+
+  return blocks
+    .flatMap((block) => {
+      if (block.windowId === sourceWindowId) {
+        const tabs = block.tabs.filter((item) => item.id !== tab.id);
+        return tabs.length > 0 ? [{ ...block, tabs }] : [];
+      }
+      if (block.windowId === targetWindowId) {
+        return [
+          {
+            ...block,
+            tabs: [...block.tabs.filter((item) => item.id !== tab.id), { ...tab, windowId: targetWindowId }]
+          }
+        ];
+      }
+      return [block];
+    })
+    .map((block, index) => ({
+      ...block,
+      label: `Window ${index + 1} · ${block.tabs.length} tabs`
+    }));
+};
 
 const writeDragPayload = (event: React.DragEvent, payload: DragPayload) => {
   event.dataTransfer.effectAllowed = "move";
