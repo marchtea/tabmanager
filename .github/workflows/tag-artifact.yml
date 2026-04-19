@@ -1,0 +1,66 @@
+name: Build Tagged Artifact
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and upload zip
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build extension zip
+        run: npm run package:zip
+
+      - name: Prepare tagged zip
+        id: package
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          if [[ "$TAG_NAME" == *"/"* || "$TAG_NAME" == *"\\"* ]]; then
+            echo "Tag name cannot contain path separators: $TAG_NAME" >&2
+            exit 1
+          fi
+
+          zip_path="release/tabmanager-extension-${TAG_NAME}.zip"
+          mv release/tabmanager-extension.zip "$zip_path"
+          echo "zip_path=$zip_path" >> "$GITHUB_OUTPUT"
+          echo "asset_name=$(basename "$zip_path")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.asset_name }}
+          path: ${{ steps.package.outputs.zip_path }}
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          ZIP_PATH: ${{ steps.package.outputs.zip_path }}
+        shell: bash
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "$ZIP_PATH" --clobber
+          else
+            gh release create "$TAG_NAME" "$ZIP_PATH" --title "$TAG_NAME" --generate-notes
+          fi
