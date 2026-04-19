@@ -9,7 +9,17 @@ export default defineConfig({
   build: {
     outDir: "dist",
     sourcemap: true,
-    emptyOutDir: true
+    emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        main: path.resolve("index.html"),
+        background: path.resolve("src/background.ts"),
+        globalSearchOverlay: path.resolve("src/globalSearchOverlay.ts")
+      },
+      output: {
+        entryFileNames: "assets/[name].js"
+      }
+    }
   },
   test: {
     environment: "jsdom",

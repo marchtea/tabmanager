@@ -5,6 +5,7 @@ import type {
   SearchResult,
   WorkspaceState
 } from "./types";
+import { getOrderedSpaces } from "./workspaceStore";
 
 const HISTORY_WINDOW_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -38,7 +39,7 @@ export const buildSearchGroups = (
     return emptySearchGroups();
   }
 
-  const spaces = Object.values(state.spaces)
+  const spaces = getOrderedSpaces(state)
     .filter((space) => matches(normalizedQuery, [space.name]))
     .map<SearchResult>((space) => ({
       id: `space:${space.id}`,

@@ -233,15 +233,16 @@ h3 {
 .search-entry {
   display: flex;
   width: 100%;
-  min-height: 42px;
+  min-height: 46px;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   padding: 0 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: 8px;
   color: var(--charcoal);
   background: var(--surface);
+  font-size: 16px;
+  font-weight: 600;
   text-align: left;
   transition:
     border-color 140ms ease,
@@ -251,6 +252,43 @@ h3 {
 .search-entry:hover {
   border-color: var(--line-strong);
   background: var(--cream);
+}
+
+.sidebar-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.search-entry .button-icon,
+.settings-entry .button-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.search-entry span {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-entry {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--charcoal-strong);
+  background: transparent;
+  font-size: 14px;
+  text-align: left;
+}
+
+.settings-entry:hover {
+  background: var(--surface-hover);
 }
 
 kbd {
@@ -309,6 +347,11 @@ kbd {
   font-size: 16px;
   font-weight: 600;
   line-height: 1.35;
+  cursor: grab;
+}
+
+.space-row > button:first-child:active {
+  cursor: grabbing;
 }
 
 .space-row > button:first-child:hover,
@@ -338,6 +381,11 @@ kbd {
   overflow: hidden;
   padding: 24px 408px 24px 24px;
   background: var(--cream);
+  transition: padding-right 160ms ease;
+}
+
+.workspace.is-open-tabs-collapsed {
+  padding-right: 112px;
 }
 
 .workspace-header {
@@ -381,6 +429,7 @@ kbd {
 
 .stack-board {
   display: flex;
+  align-items: flex-start;
   gap: 14px;
   height: calc(100vh - 124px);
   overflow-x: auto;
@@ -394,6 +443,7 @@ kbd {
   min-width: 292px;
   max-height: 100%;
   flex-direction: column;
+  align-self: flex-start;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius-panel);
@@ -451,6 +501,7 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 0 1 auto;
   padding: 10px;
 }
 
@@ -588,6 +639,47 @@ kbd {
   border-radius: var(--radius-panel);
   background: var(--surface);
   box-shadow: none;
+  transition:
+    width 160ms ease,
+    padding 160ms ease;
+}
+
+.open-tabs-panel.is-collapsed {
+  width: 72px;
+  padding: 10px;
+}
+
+.open-tabs-rail {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--charcoal);
+  background: var(--cream);
+}
+
+.open-tabs-rail span {
+  writing-mode: vertical-rl;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.open-tabs-rail strong {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 9999px;
+  background: var(--surface);
+  font-size: 13px;
 }
 
 .open-tabs-actions {
@@ -733,11 +825,72 @@ kbd {
   border-bottom: 1px solid var(--line);
   color: var(--charcoal);
   background: var(--surface);
+  font-size: 18px;
   outline: none;
 }
 
 .search-modal input::placeholder {
   color: var(--muted);
+  font-size: 18px;
+}
+
+.settings-modal {
+  display: flex;
+  width: min(520px, calc(100vw - 48px));
+  max-height: 76vh;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--focus-shadow);
+}
+
+.settings-modal header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-modal h2 {
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.shortcut-field {
+  display: grid;
+  gap: 7px;
+  color: var(--charcoal);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.shortcut-field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--charcoal);
+  background: var(--cream);
+  font-size: 16px;
+}
+
+.settings-link-button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--off-white);
+  background: var(--charcoal);
+  box-shadow: var(--button-shadow);
+}
+
+.settings-note {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .result-groups {

@@ -7,14 +7,18 @@ import {
   deleteStack,
   emptyWorkspaceState,
   getActiveSpace,
+  getOrderedSpaces,
   moveSavedTab,
+  moveSpace,
   moveStack,
+  normalizeWorkspaceState,
   normalizeUrl,
   renameSpace,
   renameStack,
   saveOpenTabToStack,
   saveOpenWindowAsStack
 } from "./workspaceStore";
+import type { WorkspaceState } from "./types";
 
 const clock = () => 1_776_496_200_000;
 
@@ -25,6 +29,7 @@ describe("workspace store", () => {
     const withStack = createStack(withSpace, "space-1", "资料", clock, () => "stack-1");
 
     expect(initial.spaces).toEqual({});
+    expect(withSpace.spaceIds).toEqual(["space-1"]);
     expect(withSpace.activeSpaceId).toBe("space-1");
     expect(withStack.spaces["space-1"].stackIds).toEqual(["stack-1"]);
     expect(withStack.stacks["stack-1"].name).toBe("资料");
@@ -49,7 +54,7 @@ describe("workspace store", () => {
 
     expect(state.spaces["space-1"].name).toBe("旧名称");
     expect(renamed.spaces["space-1"].name).toBe("新名称");
-    expect(deleted).toEqual({ spaces: {}, stacks: {}, tabs: {}, activeSpaceId: undefined });
+    expect(deleted).toEqual({ spaceIds: [], spaces: {}, stacks: {}, tabs: {}, activeSpaceId: undefined });
   });
 
   it("renames stacks and ignores missing ids", () => {
@@ -74,6 +79,7 @@ describe("workspace store", () => {
     expect(createStack(withStack, "missing", "Nope", clock, () => "stack-x")).toBe(withStack);
     expect(deleteSpace(withStack, "missing")).toBe(withStack);
     expect(deleteStack(withStack, "space-1", "missing", clock)).toBe(withStack);
+    expect(moveSpace(withStack, "missing", 0, clock)).toBe(withStack);
     expect(moveStack(withStack, "space-1", "missing", 0, clock)).toBe(withStack);
     expect(
       saveOpenTabToStack(
@@ -257,6 +263,31 @@ describe("workspace store", () => {
     expect(getActiveSpace({ ...state, activeSpaceId: "missing" })?.id).toBe("space-a");
     expect(generator()).toMatch(/^item-/);
     expect(generator()).not.toEqual(generator());
+  });
+
+  it("normalizes legacy workspaces and preserves explicit space ordering", () => {
+    const legacyState = {
+      spaces: {
+        "space-a": { id: "space-a", name: "A", stackIds: [], createdAt: 1, updatedAt: 1 },
+        "space-b": { id: "space-b", name: "B", stackIds: [], createdAt: 2, updatedAt: 2 },
+        "space-c": { id: "space-c", name: "C", stackIds: [], createdAt: 3, updatedAt: 3 }
+      },
+      stacks: {},
+      tabs: {},
+      activeSpaceId: "space-b"
+    } as unknown as WorkspaceState;
+
+    const normalized = normalizeWorkspaceState({
+      ...legacyState,
+      spaceIds: ["space-c", "missing", "space-a"]
+    });
+    const moved = moveSpace(normalized, "space-a", 0, clock);
+
+    expect(normalizeWorkspaceState(legacyState).spaceIds).toEqual(["space-a", "space-b", "space-c"]);
+    expect(normalized.spaceIds).toEqual(["space-c", "space-a", "space-b"]);
+    expect(moved.spaceIds).toEqual(["space-a", "space-c", "space-b"]);
+    expect(getOrderedSpaces(moved).map((space) => space.name)).toEqual(["A", "C", "B"]);
+    expect(normalized.spaceIds).toEqual(["space-c", "space-a", "space-b"]);
   });
 
   it("normalizes browser and fallback URLs", () => {

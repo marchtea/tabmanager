@@ -15,6 +15,11 @@ test.describe("built Chrome extension package", () => {
 
     expect(manifest.manifest_version).toBe(3);
     expect(manifest.chrome_url_overrides).toEqual({ newtab: "index.html" });
+    expect(manifest.background).toEqual({ service_worker: "assets/background.js", type: "module" });
+    expect(manifest.commands["open-global-search"].suggested_key).toEqual({
+      default: "Ctrl+Shift+K",
+      mac: "Command+Shift+K"
+    });
     expect(manifest.permissions).toEqual(expect.arrayContaining(requiredPermissions));
     expect(manifest.host_permissions).toContain("<all_urls>");
   });

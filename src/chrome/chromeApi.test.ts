@@ -1,13 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   closeDuplicateOpenTabs,
+  buildGlobalSearchGroups,
   focusOrCreateTab,
+  focusOrOpenTabManager,
   getChrome,
+  getGlobalSearchShortcut,
   getMetaDescription,
+  handleGlobalSearchResult,
+  loadSettings,
   loadWorkspace,
   groupOpenTabs,
   isTabManagerUrl,
   moveOpenTabToWindow,
+  saveSettings,
   saveWorkspace,
   searchRecentHistory
 } from "./chromeApi";
@@ -75,6 +81,34 @@ describe("chrome api adapter", () => {
     await focusOrCreateTab(chrome, "https://new.test");
 
     expect(chrome.tabs.create).toHaveBeenCalledWith({ url: "https://new.test" });
+  });
+
+  it("focuses an existing Tab Manager tab before opening a new manager page", async () => {
+    const chrome = {
+      runtime: {
+        id: "abc",
+        getURL: vi.fn((path: string) => `chrome-extension://abc/${path}`)
+      },
+      tabs: {
+        query: vi.fn().mockResolvedValue([
+          { id: 4, windowId: 12, url: "chrome-extension://abc/index.html" }
+        ]),
+        update: vi.fn().mockResolvedValue({}),
+        create: vi.fn().mockResolvedValue({})
+      },
+      windows: {
+        update: vi.fn().mockResolvedValue({})
+      }
+    } satisfies ChromeLike;
+
+    await focusOrOpenTabManager(chrome, { search: "1", stack: "stack-1" });
+
+    expect(chrome.windows.update).toHaveBeenCalledWith(12, { focused: true });
+    expect(chrome.tabs.update).toHaveBeenCalledWith(4, {
+      active: true,
+      url: "chrome-extension://abc/index.html?search=1&stack=stack-1"
+    });
+    expect(chrome.tabs.create).not.toHaveBeenCalled();
   });
 
   it("activates a tab even when window focusing is unavailable", async () => {
@@ -250,7 +284,7 @@ describe("chrome api adapter", () => {
   });
 
   it("loads and saves workspace state with local storage fallback", async () => {
-    const state = { spaces: {}, stacks: {}, tabs: {}, activeSpaceId: undefined };
+    const state = { spaceIds: [], spaces: {}, stacks: {}, tabs: {}, activeSpaceId: undefined };
     const chrome = {
       storage: {
         local: {
@@ -260,16 +294,82 @@ describe("chrome api adapter", () => {
       }
     } satisfies ChromeLike;
 
-    await expect(loadWorkspace(chrome)).resolves.toBe(state);
+    await expect(loadWorkspace(chrome)).resolves.toEqual(state);
     await saveWorkspace(chrome, state);
-    await expect(loadWorkspace(undefined)).resolves.toEqual({ spaces: {}, stacks: {}, tabs: {} });
+    await expect(loadWorkspace(undefined)).resolves.toEqual({ spaceIds: [], spaces: {}, stacks: {}, tabs: {} });
     await expect(loadWorkspace({ storage: { local: { get: vi.fn().mockResolvedValue({ tabManagerWorkspace: null }) } } })).resolves.toEqual({
+      spaceIds: [],
       spaces: {},
       stacks: {},
       tabs: {}
     });
     await expect(saveWorkspace(undefined, state)).resolves.toBeUndefined();
     expect(chrome.storage.local.set).toHaveBeenCalledWith({ tabManagerWorkspace: state });
+  });
+
+  it("loads settings and reads Chrome command shortcuts", async () => {
+    const chrome = {
+      commands: {
+        getAll: vi.fn().mockResolvedValue([
+          { name: "other", shortcut: "Ctrl+J" },
+          { name: "open-global-search", shortcut: "Ctrl+Shift+K" }
+        ])
+      },
+      storage: {
+        local: {
+          get: vi.fn().mockResolvedValue({ tabManagerSettings: { appSearchShortcut: "Ctrl+K" } }),
+          set: vi.fn().mockResolvedValue(undefined)
+        }
+      }
+    } satisfies ChromeLike;
+
+    await expect(loadSettings(chrome)).resolves.toEqual({ appSearchShortcut: "Ctrl+K" });
+    await expect(getGlobalSearchShortcut(chrome)).resolves.toBe("Ctrl+Shift+K");
+    await expect(getGlobalSearchShortcut(undefined)).resolves.toBe("Command+Shift+K");
+    await saveSettings(chrome, { appSearchShortcut: "Command+K" });
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({
+      tabManagerSettings: { appSearchShortcut: "Command+K" }
+    });
+  });
+
+  it("builds global search groups and dispatches picked results", async () => {
+    const now = Date.UTC(2026, 3, 18);
+    const chrome = {
+      runtime: {
+        id: "abc",
+        getURL: vi.fn((path: string) => `chrome-extension://abc/${path}`)
+      },
+      storage: {
+        local: {
+          get: vi.fn().mockResolvedValue({
+            tabManagerWorkspace: {
+              spaceIds: ["space-1"],
+              spaces: {
+                "space-1": { id: "space-1", name: "AI Research", stackIds: [], createdAt: now, updatedAt: now }
+              },
+              stacks: {},
+              tabs: {}
+            }
+          })
+        }
+      },
+      tabs: {
+        query: vi.fn().mockResolvedValue([]),
+        update: vi.fn().mockResolvedValue({}),
+        create: vi.fn().mockResolvedValue({})
+      },
+      history: {
+        search: vi.fn().mockResolvedValue([])
+      }
+    } satisfies ChromeLike;
+
+    const groups = await buildGlobalSearchGroups(chrome, "AI", now);
+    await handleGlobalSearchResult(chrome, groups.spaces[0]);
+
+    expect(groups.spaces[0]).toMatchObject({ title: "AI Research", kind: "space" });
+    expect(chrome.tabs.create).toHaveBeenCalledWith({
+      url: "chrome-extension://abc/index.html?space=space-1"
+    });
   });
 
   it("identifies the extension newtab page", () => {

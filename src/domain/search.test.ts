@@ -60,6 +60,7 @@ describe("search", () => {
 
   it("returns empty groups for blank queries and falls back to URLs for missing titles", () => {
     const state = {
+      spaceIds: [],
       spaces: {},
       stacks: {},
       tabs: {

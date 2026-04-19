@@ -31,10 +31,15 @@ export type SavedTab = {
 };
 
 export type WorkspaceState = {
+  spaceIds: string[];
   spaces: Record<string, Space>;
   stacks: Record<string, Stack>;
   tabs: Record<string, SavedTab>;
   activeSpaceId?: string;
+};
+
+export type TabManagerSettings = {
+  appSearchShortcut: string;
 };
 
 export type OpenTab = {

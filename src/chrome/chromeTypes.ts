@@ -19,9 +19,29 @@ export type ChromeWindowRecord = {
   tabs?: ChromeTabRecord[];
 };
 
+export type ChromeCommandRecord = {
+  name?: string;
+  shortcut?: string;
+};
+
+export type ChromeMessageSender = {
+  tab?: ChromeTabRecord;
+};
+
 export type ChromeLike = {
   runtime?: {
     id?: string;
+    getURL?: (path: string) => string;
+    onMessage?: {
+      addListener?: (
+        listener: (
+          message: unknown,
+          sender: ChromeMessageSender,
+          sendResponse: (response?: unknown) => void
+        ) => boolean | void
+      ) => void;
+    };
+    sendMessage?: (message: unknown) => Promise<unknown>;
   };
   tabs?: {
     query?: (queryInfo: Record<string, unknown>) => Promise<ChromeTabRecord[]>;
@@ -45,10 +65,17 @@ export type ChromeLike = {
     }) => Promise<ChromeHistoryRecord[]>;
   };
   scripting?: {
-    executeScript?: (injection: {
+    executeScript?: <T = string | undefined>(injection: {
       target: { tabId: number };
-      func: () => string | undefined;
-    }) => Promise<Array<{ result?: string }>>;
+      func?: () => T;
+      files?: string[];
+    }) => Promise<Array<{ result?: T }>>;
+  };
+  commands?: {
+    getAll?: () => Promise<ChromeCommandRecord[]>;
+    onCommand?: {
+      addListener?: (listener: (command: string) => void) => void;
+    };
   };
   storage?: {
     local?: {

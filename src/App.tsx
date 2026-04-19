@@ -3,14 +3,23 @@ import {
   closeDuplicateOpenTabs,
   focusOrCreateTab,
   getChrome,
+  getGlobalSearchShortcut,
   groupOpenTabs,
+  loadSettings,
   loadWorkspace,
   moveOpenTabToWindow,
+  saveSettings,
   saveWorkspace,
   searchRecentHistory
 } from "./chrome/chromeApi";
 import { buildSearchGroups } from "./domain/search";
-import type { HistoryEntry, OpenTab, OpenTabBlock, SearchGroups, SearchResult } from "./domain/types";
+import {
+  DEFAULT_GLOBAL_SEARCH_SHORTCUT,
+  formatShortcutForPlatform,
+  shortcutFromEvent,
+  shortcutMatchesEvent
+} from "./domain/settings";
+import type { HistoryEntry, OpenTab, OpenTabBlock, SearchGroups, SearchResult, TabManagerSettings } from "./domain/types";
 import {
   createIdGenerator,
   createSpace,
@@ -19,7 +28,9 @@ import {
   deleteStack,
   emptyWorkspaceState,
   getActiveSpace,
+  getOrderedSpaces,
   moveSavedTab,
+  moveSpace,
   moveStack,
   renameSpace,
   renameStack,
@@ -31,9 +42,21 @@ type DragPayload =
   | { type: "open-tab"; tab: OpenTab }
   | { type: "open-block"; windowId: number }
   | { type: "saved-tab"; tabId: string }
-  | { type: "stack"; stackId: string };
+  | { type: "stack"; stackId: string }
+  | { type: "space"; spaceId: string };
 
-type IconName = "chevron-right" | "chevron-down" | "copy" | "edit" | "link" | "plus" | "refresh" | "trash";
+type IconName =
+  | "chevron-right"
+  | "chevron-down"
+  | "copy"
+  | "edit"
+  | "link"
+  | "panel-right"
+  | "plus"
+  | "refresh"
+  | "search"
+  | "settings"
+  | "trash";
 
 const now = () => Date.now();
 
@@ -71,19 +94,29 @@ export const App = () => {
   const chromeApi = useMemo(() => getChrome(), []);
   const idGeneratorRef = useRef(createIdGenerator("tm"));
   const [workspace, setWorkspace] = useState(emptyWorkspaceState);
+  const [settings, setSettings] = useState<TabManagerSettings>({ appSearchShortcut: "Mod+K" });
+  const [globalSearchShortcut, setGlobalSearchShortcut] = useState(DEFAULT_GLOBAL_SEARCH_SHORTCUT);
   const [openBlocks, setOpenBlocks] = useState<OpenTabBlock[]>(demoOpenBlocks);
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   const [query, setQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isOpenTabsPanelCollapsed, setIsOpenTabsPanelCollapsed] = useState(false);
   const [selectedResultIndex, setSelectedResultIndex] = useState(0);
   const [collapsedOpenBlockIds, setCollapsedOpenBlockIds] = useState<ReadonlySet<number>>(() => new Set());
   const [isDeduplicating, setIsDeduplicating] = useState(false);
   const [dedupeStatus, setDedupeStatus] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const didHandleInitialUrlRef = useRef(false);
 
   const activeSpace = getActiveSpace(workspace);
   const activeStacks = activeSpace?.stackIds.map((id) => workspace.stacks[id]).filter(Boolean) ?? [];
   const activeSavedTabCount = activeStacks.reduce((total, stack) => total + stack.tabIds.length, 0);
+  const orderedSpaces = getOrderedSpaces(workspace);
+  const openTabCount = openBlocks.reduce((total, block) => total + block.tabs.length, 0);
+  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+  const appSearchShortcutLabel = formatShortcutForPlatform(settings.appSearchShortcut, isMac);
+  const globalSearchShortcutLabel = formatShortcutForPlatform(globalSearchShortcut, isMac);
   const searchGroups = useMemo(
     () => buildSearchGroups(query, workspace, openBlocks, historyEntries, now()),
     [historyEntries, openBlocks, query, workspace]
@@ -100,8 +133,14 @@ export const App = () => {
 
   useEffect(() => {
     const load = async () => {
-      const saved = await loadWorkspace(chromeApi);
+      const [saved, savedSettings, savedGlobalShortcut] = await Promise.all([
+        loadWorkspace(chromeApi),
+        loadSettings(chromeApi),
+        getGlobalSearchShortcut(chromeApi)
+      ]);
       setWorkspace(saved);
+      setSettings(savedSettings);
+      setGlobalSearchShortcut(savedGlobalShortcut);
       setLoaded(true);
     };
     void load();
@@ -119,8 +158,15 @@ export const App = () => {
   }, [chromeApi, loaded, workspace]);
 
   useEffect(() => {
+    if (!loaded) {
+      return;
+    }
+    void saveSettings(chromeApi, settings);
+  }, [chromeApi, loaded, settings]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if (shortcutMatchesEvent(settings.appSearchShortcut, event)) {
         event.preventDefault();
         setIsSearchOpen(true);
       }
@@ -130,7 +176,26 @@ export const App = () => {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [settings.appSearchShortcut]);
+
+  useEffect(() => {
+    if (!loaded || didHandleInitialUrlRef.current) {
+      return;
+    }
+    didHandleInitialUrlRef.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const spaceId = params.get("space");
+    const stackId = params.get("stack");
+    if (spaceId && workspace.spaces[spaceId]) {
+      setWorkspace((state) => ({ ...state, activeSpaceId: spaceId }));
+    }
+    if (params.get("search") === "1") {
+      setIsSearchOpen(true);
+    }
+    if (stackId) {
+      scrollStackIntoView(stackId);
+    }
+  }, [loaded, workspace.spaces]);
 
   useEffect(() => {
     if (!chromeApi || !query.trim()) {
@@ -219,6 +284,17 @@ export const App = () => {
       const targetIndex = activeSpace.stackIds.indexOf(stackId);
       setWorkspace((state) => moveStack(state, activeSpace.id, payload.stackId, targetIndex, now));
     }
+  };
+
+  const handleDropOnSpace = (targetSpaceId: string, event: React.DragEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const payload = readDragPayload(event);
+    if (payload?.type !== "space" || payload.spaceId === targetSpaceId) {
+      return;
+    }
+    const targetIndex = orderedSpaces.findIndex((space) => space.id === targetSpaceId);
+    setWorkspace((state) => moveSpace(state, payload.spaceId, targetIndex, now));
   };
 
   const handleDropOnWorkspace = (event: React.DragEvent) => {
@@ -332,15 +408,32 @@ export const App = () => {
             <Icon name="plus" />
           </button>
         </div>
-        <button className="search-entry" data-testid="search-entry" type="button" onClick={() => setIsSearchOpen(true)}>
-          <span>搜索</span>
-          <kbd>⌘K</kbd>
-        </button>
+        <div className="sidebar-controls">
+          <button className="search-entry" data-testid="search-entry" type="button" onClick={() => setIsSearchOpen(true)}>
+            <Icon name="search" />
+            <span>搜索</span>
+            <kbd>{appSearchShortcutLabel}</kbd>
+          </button>
+          <button className="settings-entry" data-testid="settings-entry" type="button" onClick={() => setIsSettingsOpen(true)}>
+            <Icon name="settings" />
+            <span>设置</span>
+          </button>
+        </div>
         <nav className="space-list" aria-label="Spaces">
-          {Object.values(workspace.spaces).map((space) => (
+          {orderedSpaces.map((space) => (
             <section className="space-group" data-testid="space-group" key={space.id}>
-              <div className={`space-row ${space.id === activeSpace?.id ? "is-active" : ""}`}>
-                <button type="button" onClick={() => setActiveSpace(space.id)}>
+              <div
+                className={`space-row ${space.id === activeSpace?.id ? "is-active" : ""}`}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => handleDropOnSpace(space.id, event)}
+              >
+                <button
+                  data-testid="space-title"
+                  draggable
+                  type="button"
+                  onClick={() => setActiveSpace(space.id)}
+                  onDragStart={(event) => writeDragPayload(event, { type: "space", spaceId: space.id })}
+                >
                   {space.name}
                 </button>
                 <button
@@ -377,7 +470,9 @@ export const App = () => {
       </aside>
 
       <section
-        className={`workspace ${activeStacks.length > 0 ? "has-stacks" : ""}`}
+        className={`workspace ${activeStacks.length > 0 ? "has-stacks" : ""} ${
+          isOpenTabsPanelCollapsed ? "is-open-tabs-collapsed" : ""
+        }`}
         data-testid="workspace"
         onDragOver={(event) => event.preventDefault()}
         onDrop={handleDropOnWorkspace}
@@ -490,10 +585,36 @@ export const App = () => {
         </div>
       </section>
 
-      <aside className="open-tabs-panel" data-testid="open-tabs-panel">
+      <aside
+        className={`open-tabs-panel ${isOpenTabsPanelCollapsed ? "is-collapsed" : ""}`}
+        data-testid="open-tabs-panel"
+      >
+        {isOpenTabsPanelCollapsed ? (
+          <button
+            className="open-tabs-rail"
+            data-testid="expand-open-tabs"
+            type="button"
+            title="展开 Open Tabs"
+            onClick={() => setIsOpenTabsPanelCollapsed(false)}
+          >
+            <Icon name="panel-right" />
+            <span>Open Tabs</span>
+            <strong>{openTabCount}</strong>
+          </button>
+        ) : (
+          <>
         <header>
           <p className="eyebrow">Open Tabs</p>
           <div className="open-tabs-actions">
+            <button
+              className="tiny-button"
+              data-testid="collapse-open-tabs"
+              type="button"
+              title="收回 Open Tabs"
+              onClick={() => setIsOpenTabsPanelCollapsed(true)}
+            >
+              <Icon name="panel-right" />
+            </button>
             <button
               className="tiny-button"
               data-testid="dedupe-open-tabs"
@@ -567,6 +688,8 @@ export const App = () => {
             </section>
           ))}
         </div>
+          </>
+        )}
       </aside>
 
       {isSearchOpen && (
@@ -584,9 +707,75 @@ export const App = () => {
           setSelectedIndex={setSelectedResultIndex}
         />
       )}
+      {isSettingsOpen && (
+        <SettingsModal
+          appSearchShortcut={settings.appSearchShortcut}
+          appSearchShortcutLabel={appSearchShortcutLabel}
+          globalSearchShortcutLabel={globalSearchShortcutLabel}
+          onClose={() => setIsSettingsOpen(false)}
+          onOpenChromeShortcuts={() => void openUrl("chrome://extensions/shortcuts")}
+          onSetAppSearchShortcut={(shortcut) =>
+            setSettings((currentSettings) => ({ ...currentSettings, appSearchShortcut: shortcut }))
+          }
+        />
+      )}
     </main>
   );
 };
+
+const SettingsModal = ({
+  appSearchShortcut,
+  appSearchShortcutLabel,
+  globalSearchShortcutLabel,
+  onClose,
+  onOpenChromeShortcuts,
+  onSetAppSearchShortcut
+}: {
+  appSearchShortcut: string;
+  appSearchShortcutLabel: string;
+  globalSearchShortcutLabel: string;
+  onClose: () => void;
+  onOpenChromeShortcuts: () => void;
+  onSetAppSearchShortcut: (shortcut: string) => void;
+}) => (
+  <div className="search-backdrop" onMouseDown={onClose}>
+    <section className="settings-modal" data-testid="settings-modal" onMouseDown={(event) => event.stopPropagation()}>
+      <header>
+        <div>
+          <p className="eyebrow">Settings</p>
+          <h2>快捷键</h2>
+        </div>
+        <button className="tiny-button" type="button" title="关闭" onClick={onClose}>
+          <Icon name="chevron-down" />
+        </button>
+      </header>
+      <label className="shortcut-field">
+        <span>搜索快捷键</span>
+        <input
+          aria-label="搜索快捷键"
+          data-testid="app-search-shortcut"
+          readOnly
+          value={appSearchShortcutLabel}
+          onKeyDown={(event) => {
+            event.preventDefault();
+            const shortcut = shortcutFromEvent(event.nativeEvent);
+            if (shortcut) {
+              onSetAppSearchShortcut(shortcut);
+            }
+          }}
+        />
+      </label>
+      <label className="shortcut-field">
+        <span>全局搜索快捷键</span>
+        <input aria-label="全局搜索快捷键" readOnly value={globalSearchShortcutLabel} />
+      </label>
+      <button className="settings-link-button" type="button" onClick={onOpenChromeShortcuts}>
+        在 Chrome 中修改全局快捷键
+      </button>
+      <p className="settings-note">当前应用内快捷键：{appSearchShortcut}</p>
+    </section>
+  </div>
+);
 
 const SearchModal = ({
   flatResults,
@@ -698,6 +887,13 @@ const Icon = ({ name }: { name: IconName }) => {
         <path d="M14 11a5 5 0 0 0-7.1 0l-1.4 1.4a5 5 0 0 0 7.1 7.1l.8-.8" />
       </>
     ),
+    "panel-right": (
+      <>
+        <rect width="18" height="18" x="3" y="3" rx="2" />
+        <path d="M15 3v18" />
+        <path d="m10 9-3 3 3 3" />
+      </>
+    ),
     plus: (
       <>
         <path d="M12 5v14" />
@@ -710,6 +906,18 @@ const Icon = ({ name }: { name: IconName }) => {
         <path d="M3 21v-5h5" />
         <path d="M3 12A9 9 0 0 1 18.3 5.6L21 8" />
         <path d="M21 3v5h-5" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </>
+    ),
+    settings: (
+      <>
+        <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+        <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 1 1 4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1A2 2 0 1 1 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.6 1h.1a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z" />
       </>
     ),
     trash: (

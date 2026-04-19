@@ -1,9 +1,13 @@
 import { normalizeUrl } from "../domain/workspaceStore";
-import type { HistoryEntry, OpenTab, OpenTabBlock, WorkspaceState } from "../domain/types";
-import { emptyWorkspaceState } from "../domain/workspaceStore";
+import { buildSearchGroups } from "../domain/search";
+import { normalizeSettings } from "../domain/settings";
+import type { HistoryEntry, OpenTab, OpenTabBlock, SearchGroups, SearchResult, TabManagerSettings, WorkspaceState } from "../domain/types";
+import { emptyWorkspaceState, normalizeWorkspaceState } from "../domain/workspaceStore";
 import type { ChromeHistoryRecord, ChromeLike, ChromeTabRecord } from "./chromeTypes";
 
 const STORAGE_KEY = "tabManagerWorkspace";
+const SETTINGS_STORAGE_KEY = "tabManagerSettings";
+const GLOBAL_SEARCH_COMMAND = "open-global-search";
 
 export const getChrome = (): ChromeLike | undefined => {
   if (typeof chrome === "undefined") {
@@ -59,6 +63,31 @@ export const focusOrCreateTab = async (chromeApi: ChromeLike, url: string): Prom
   }
 
   await chromeApi.tabs?.create?.({ url });
+};
+
+export const focusOrOpenTabManager = async (
+  chromeApi: ChromeLike,
+  query: Record<string, string | undefined> = {}
+): Promise<void> => {
+  const extensionUrl = chromeApi.runtime?.getURL?.("index.html") ?? "index.html";
+  const url = new URL(extensionUrl);
+  for (const [key, value] of Object.entries(query)) {
+    if (value) {
+      url.searchParams.set(key, value);
+    }
+  }
+
+  const openTabs = await listOpenTabRecords(chromeApi);
+  const existing = openTabs.find((tab) => isTabManagerUrl(tab.url, chromeApi.runtime?.id));
+  if (existing?.id) {
+    if (existing.windowId) {
+      await chromeApi.windows?.update?.(existing.windowId, { focused: true });
+    }
+    await chromeApi.tabs?.update?.(existing.id, { active: true, url: url.toString() });
+    return;
+  }
+
+  await chromeApi.tabs?.create?.({ url: url.toString() });
 };
 
 export const moveOpenTabToWindow = async (
@@ -142,10 +171,42 @@ export const searchRecentHistory = async (
   return records.flatMap(mapHistoryRecord);
 };
 
+export const buildGlobalSearchGroups = async (
+  chromeApi: ChromeLike,
+  query: string,
+  timestamp: number
+): Promise<SearchGroups> => {
+  const [workspace, openBlocks, historyEntries] = await Promise.all([
+    loadWorkspace(chromeApi),
+    groupOpenTabs(chromeApi),
+    query.trim() ? searchRecentHistory(chromeApi, query, timestamp) : Promise.resolve([])
+  ]);
+  return buildSearchGroups(query, workspace, openBlocks, historyEntries, timestamp);
+};
+
+export const handleGlobalSearchResult = async (
+  chromeApi: ChromeLike,
+  result: SearchResult
+): Promise<void> => {
+  if ((result.kind === "saved-tab" || result.kind === "open-tab" || result.kind === "history") && result.url) {
+    await focusOrCreateTab(chromeApi, result.url);
+    return;
+  }
+
+  if (result.kind === "space" && result.spaceId) {
+    await focusOrOpenTabManager(chromeApi, { space: result.spaceId });
+    return;
+  }
+
+  if (result.kind === "stack" && result.spaceId && result.stackId) {
+    await focusOrOpenTabManager(chromeApi, { space: result.spaceId, stack: result.stackId });
+  }
+};
+
 export const loadWorkspace = async (chromeApi: ChromeLike | undefined): Promise<WorkspaceState> => {
   const data = await chromeApi?.storage?.local?.get?.([STORAGE_KEY]);
   const value = data?.[STORAGE_KEY];
-  return isWorkspaceState(value) ? value : emptyWorkspaceState();
+  return isWorkspaceState(value) ? normalizeWorkspaceState(value) : emptyWorkspaceState();
 };
 
 export const saveWorkspace = async (
@@ -153,6 +214,23 @@ export const saveWorkspace = async (
   state: WorkspaceState
 ): Promise<void> => {
   await chromeApi?.storage?.local?.set?.({ [STORAGE_KEY]: state });
+};
+
+export const loadSettings = async (chromeApi: ChromeLike | undefined): Promise<TabManagerSettings> => {
+  const data = await chromeApi?.storage?.local?.get?.([SETTINGS_STORAGE_KEY]);
+  return normalizeSettings(data?.[SETTINGS_STORAGE_KEY]);
+};
+
+export const saveSettings = async (
+  chromeApi: ChromeLike | undefined,
+  settings: TabManagerSettings
+): Promise<void> => {
+  await chromeApi?.storage?.local?.set?.({ [SETTINGS_STORAGE_KEY]: normalizeSettings(settings) });
+};
+
+export const getGlobalSearchShortcut = async (chromeApi: ChromeLike | undefined): Promise<string> => {
+  const commands = await chromeApi?.commands?.getAll?.() ?? [];
+  return commands.find((command) => command.name === GLOBAL_SEARCH_COMMAND)?.shortcut || "Command+Shift+K";
 };
 
 const mapChromeTab = (tab: ChromeTabRecord): OpenTab | undefined => {

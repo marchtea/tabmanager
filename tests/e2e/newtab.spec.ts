@@ -19,6 +19,11 @@ test.describe("Tab Manager newtab MVP", () => {
     await expect(page.getByTestId("search-result")).toContainText(
       "The library for web and native user interfaces"
     );
+
+    await expect(page.getByRole("textbox", { name: "搜索 spaces、stacks、tabs、history" })).toHaveCSS(
+      "font-size",
+      "18px"
+    );
   });
 
   test("collapses and expands an open window block from its title", async ({ page }) => {
@@ -138,6 +143,16 @@ test.describe("Tab Manager newtab MVP", () => {
     await expectStackOrder(page, ["Beta", "Alpha", "Gamma"]);
   });
 
+  test("reorders spaces by dragging the space title", async ({ page }) => {
+    await createSpace(page, "Alpha Space");
+    await createSpace(page, "Beta Space");
+    await createSpace(page, "Gamma Space");
+
+    await spaceByName(page, "Gamma Space").getByTestId("space-title").dragTo(spaceByName(page, "Alpha Space"));
+
+    await expectSpaceOrder(page, ["Gamma Space", "Alpha Space", "Beta Space"]);
+  });
+
   test("selects a stack search result with Enter", async ({ page }) => {
     await createSpace(page, "Keyboard Research");
     await createStack(page, "Keyboard Stack");
@@ -202,6 +217,116 @@ test.describe("Tab Manager newtab MVP", () => {
       blockOverflowY: "visible",
       tabMinHeight: "48px"
     });
+  });
+
+  test("collapses and expands the open tabs panel", async ({ page }) => {
+    const workspace = page.getByTestId("workspace");
+    const panel = page.getByTestId("open-tabs-panel");
+    const expandedPadding = await workspace.evaluate((element) => window.getComputedStyle(element).paddingRight);
+
+    await page.getByTestId("collapse-open-tabs").click();
+
+    await expect(page.getByTestId("expand-open-tabs")).toBeVisible();
+    await expect(panel).toHaveClass(/is-collapsed/);
+    await expect.poll(async () => workspace.evaluate((element) => window.getComputedStyle(element).paddingRight)).not.toBe(expandedPadding);
+
+    await page.getByTestId("expand-open-tabs").click();
+    await expect(page.getByTestId("collapse-open-tabs")).toBeVisible();
+    await expect(panel).not.toHaveClass(/is-collapsed/);
+  });
+
+  test("shows settings with app and global shortcuts", async ({ page }) => {
+    await page.getByTestId("settings-entry").click();
+
+    await expect(page.getByTestId("settings-modal")).toBeVisible();
+    await expect(page.getByTestId("app-search-shortcut")).toHaveValue(/K/);
+    await expect(page.getByLabel("全局搜索快捷键", { exact: true })).toHaveValue(/K/);
+
+    await page.getByTestId("app-search-shortcut").press(process.platform === "darwin" ? "Meta+Shift+J" : "Control+Shift+J");
+    await expect(page.getByTestId("app-search-shortcut")).toHaveValue(/J/);
+  });
+
+  test("keeps short stacks content-sized while long stacks scroll internally", async ({ page }) => {
+    await page.addInitScript(() => {
+      const tabIds = Array.from({ length: 12 }, (_, index) => `tab-${index}`);
+      const now = Date.UTC(2026, 3, 20);
+      Object.defineProperty(window, "chrome", {
+        configurable: true,
+        value: {
+          runtime: { id: "abc" },
+          storage: {
+            local: {
+              get: async () => ({
+                tabManagerWorkspace: {
+                  spaceIds: ["space-1"],
+                  activeSpaceId: "space-1",
+                  spaces: {
+                    "space-1": {
+                      id: "space-1",
+                      name: "Height Research",
+                      stackIds: ["stack-short", "stack-long"],
+                      createdAt: now,
+                      updatedAt: now
+                    }
+                  },
+                  stacks: {
+                    "stack-short": {
+                      id: "stack-short",
+                      spaceId: "space-1",
+                      name: "Short",
+                      tabIds: [],
+                      createdAt: now,
+                      updatedAt: now
+                    },
+                    "stack-long": {
+                      id: "stack-long",
+                      spaceId: "space-1",
+                      name: "Long",
+                      tabIds,
+                      createdAt: now,
+                      updatedAt: now
+                    }
+                  },
+                  tabs: Object.fromEntries(
+                    tabIds.map((id, index) => [
+                      id,
+                      {
+                        id,
+                        spaceId: "space-1",
+                        stackId: "stack-long",
+                        title: `Long Tab ${index}`,
+                        url: `https://long-${index}.test`,
+                        source: "manual",
+                        createdAt: now,
+                        updatedAt: now
+                      }
+                    ])
+                  )
+                }
+              }),
+              set: async () => undefined
+            }
+          },
+          tabs: { query: async () => [] }
+        }
+      });
+    });
+    await page.goto("/");
+    await expect(page.getByTestId("tab-manager-shell")).toBeVisible();
+
+    const shortStack = stackByName(page, "Short");
+    const longStack = stackByName(page, "Long");
+    const boardHeight = await page.getByTestId("workspace").evaluate((element) => element.getBoundingClientRect().height);
+
+    await expect.poll(async () => shortStack.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThan(boardHeight / 2);
+
+    await expect.poll(async () =>
+      longStack.locator(".tab-list").evaluate((element) => ({
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        overflowY: window.getComputedStyle(element).overflowY
+      }))
+    ).toMatchObject({ overflowY: "auto" });
   });
 });
 
@@ -381,5 +506,15 @@ const expectStackOrder = async (page: import("@playwright/test").Page, names: st
       .locator("h3")
       .allTextContents();
     return headings.slice(0, names.length);
+  }).toEqual(names);
+};
+
+const expectSpaceOrder = async (page: import("@playwright/test").Page, names: string[]) => {
+  await expect.poll(async () => {
+    const labels = await page
+      .getByTestId("space-group")
+      .getByTestId("space-title")
+      .allTextContents();
+    return labels.slice(0, names.length);
   }).toEqual(names);
 };

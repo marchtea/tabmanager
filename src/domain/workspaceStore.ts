@@ -4,6 +4,7 @@ export type Clock = () => number;
 export type IdGenerator = () => string;
 
 export const emptyWorkspaceState = (): WorkspaceState => ({
+  spaceIds: [],
   spaces: {},
   stacks: {},
   tabs: {}
@@ -52,6 +53,7 @@ export const createSpace = (
   clock: Clock,
   createId: IdGenerator
 ): WorkspaceState => {
+  const normalizedState = normalizeWorkspaceState(state);
   const now = clock();
   const id = createId();
   const space: Space = {
@@ -63,8 +65,9 @@ export const createSpace = (
   };
 
   return {
-    ...state,
-    spaces: { ...state.spaces, [id]: space },
+    ...normalizedState,
+    spaceIds: [...normalizedState.spaceIds, id],
+    spaces: { ...normalizedState.spaces, [id]: space },
     activeSpaceId: id
   };
 };
@@ -90,13 +93,14 @@ export const renameSpace = (
 };
 
 export const deleteSpace = (state: WorkspaceState, spaceId: string): WorkspaceState => {
-  const space = state.spaces[spaceId];
+  const normalizedState = normalizeWorkspaceState(state);
+  const space = normalizedState.spaces[spaceId];
   if (!space) {
     return state;
   }
 
-  const stacks = { ...state.stacks };
-  const tabs = { ...state.tabs };
+  const stacks = { ...normalizedState.stacks };
+  const tabs = { ...normalizedState.tabs };
   for (const stackId of space.stackIds) {
     const stack = stacks[stackId];
     if (stack) {
@@ -107,12 +111,13 @@ export const deleteSpace = (state: WorkspaceState, spaceId: string): WorkspaceSt
     }
   }
 
-  const spaces = { ...state.spaces };
+  const spaces = { ...normalizedState.spaces };
   delete spaces[spaceId];
+  const spaceIds = normalizedState.spaceIds.filter((id) => id !== spaceId);
   const nextActiveSpaceId =
-    state.activeSpaceId === spaceId ? Object.keys(spaces)[0] : state.activeSpaceId;
+    normalizedState.activeSpaceId === spaceId ? spaceIds[0] : normalizedState.activeSpaceId;
 
-  return { spaces, stacks, tabs, activeSpaceId: nextActiveSpaceId };
+  return { spaceIds, spaces, stacks, tabs, activeSpaceId: nextActiveSpaceId };
 };
 
 export const createStack = (
@@ -221,6 +226,28 @@ export const moveStack = (
     spaces: {
       ...state.spaces,
       [spaceId]: { ...space, stackIds, updatedAt: clock() }
+    }
+  };
+};
+
+export const moveSpace = (
+  state: WorkspaceState,
+  spaceId: string,
+  targetIndex: number,
+  clock: Clock
+): WorkspaceState => {
+  const normalizedState = normalizeWorkspaceState(state);
+  const space = normalizedState.spaces[spaceId];
+  if (!space || !normalizedState.spaceIds.includes(spaceId)) {
+    return state;
+  }
+
+  return {
+    ...normalizedState,
+    spaceIds: moveId(normalizedState.spaceIds, spaceId, targetIndex),
+    spaces: {
+      ...normalizedState.spaces,
+      [spaceId]: { ...space, updatedAt: clock() }
     }
   };
 };
@@ -334,10 +361,32 @@ export const saveOpenWindowAsStack = (
 };
 
 export const getActiveSpace = (state: WorkspaceState): Space | undefined => {
-  if (state.activeSpaceId && state.spaces[state.activeSpaceId]) {
-    return state.spaces[state.activeSpaceId];
+  const normalizedState = normalizeWorkspaceState(state);
+  if (normalizedState.activeSpaceId && normalizedState.spaces[normalizedState.activeSpaceId]) {
+    return normalizedState.spaces[normalizedState.activeSpaceId];
   }
-  return Object.values(state.spaces)[0];
+  const firstSpaceId = normalizedState.spaceIds[0];
+  return firstSpaceId ? normalizedState.spaces[firstSpaceId] : undefined;
+};
+
+export const getOrderedSpaces = (state: WorkspaceState): Space[] => {
+  const normalizedState = normalizeWorkspaceState(state);
+  return normalizedState.spaceIds
+    .map((spaceId) => normalizedState.spaces[spaceId])
+    .filter((space): space is Space => Boolean(space));
+};
+
+export const normalizeWorkspaceState = (state: WorkspaceState): WorkspaceState => {
+  const knownSpaceIds = new Set(Object.keys(state.spaces));
+  const orderedSpaceIds = [
+    ...(Array.isArray(state.spaceIds) ? state.spaceIds.filter((id) => knownSpaceIds.has(id)) : []),
+    ...Object.keys(state.spaces).filter((id) => !state.spaceIds?.includes(id))
+  ];
+
+  return {
+    ...state,
+    spaceIds: orderedSpaceIds
+  };
 };
 
 const findTabByUrlInSpace = (
