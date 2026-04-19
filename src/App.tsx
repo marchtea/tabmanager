@@ -33,6 +33,8 @@ type DragPayload =
   | { type: "saved-tab"; tabId: string }
   | { type: "stack"; stackId: string };
 
+type IconName = "chevron-right" | "chevron-down" | "copy" | "edit" | "link" | "plus" | "refresh" | "trash";
+
 const now = () => Date.now();
 
 const demoOpenBlocks: OpenTabBlock[] = [
@@ -81,6 +83,7 @@ export const App = () => {
 
   const activeSpace = getActiveSpace(workspace);
   const activeStacks = activeSpace?.stackIds.map((id) => workspace.stacks[id]).filter(Boolean) ?? [];
+  const activeSavedTabCount = activeStacks.reduce((total, stack) => total + stack.tabIds.length, 0);
   const searchGroups = useMemo(
     () => buildSearchGroups(query, workspace, openBlocks, historyEntries, now()),
     [historyEntries, openBlocks, query, workspace]
@@ -319,9 +322,14 @@ export const App = () => {
     <main className="app-shell" data-testid="tab-manager-shell">
       <aside className="sidebar" data-testid="sidebar">
         <div className="brand-row">
-          <h1>Tab Manager</h1>
+          <div className="brand-lockup">
+            <span className="brand-mark" aria-hidden="true">
+              TM
+            </span>
+            <h1>Tab Manager</h1>
+          </div>
           <button className="icon-button" data-testid="add-space" type="button" title="新增 Space" onClick={createNewSpace}>
-            +
+            <Icon name="plus" />
           </button>
         </div>
         <button className="search-entry" data-testid="search-entry" type="button" onClick={() => setIsSearchOpen(true)}>
@@ -342,7 +350,7 @@ export const App = () => {
                   title="重命名 Space"
                   onClick={() => renameCurrentSpace(space.id, space.name)}
                 >
-                  ✎
+                  <Icon name="edit" />
                 </button>
                 <button
                   className="tiny-button danger"
@@ -351,7 +359,7 @@ export const App = () => {
                   title="删除 Space"
                   onClick={() => removeCurrentSpace(space.id, space.name)}
                 >
-                  ×
+                  <Icon name="trash" />
                 </button>
               </div>
               {space.id === activeSpace?.id && (
@@ -369,7 +377,7 @@ export const App = () => {
       </aside>
 
       <section
-        className="workspace"
+        className={`workspace ${activeStacks.length > 0 ? "has-stacks" : ""}`}
         data-testid="workspace"
         onDragOver={(event) => event.preventDefault()}
         onDrop={handleDropOnWorkspace}
@@ -379,6 +387,10 @@ export const App = () => {
             <p className="eyebrow">Workspace</p>
             <h2>{activeSpace?.name ?? "未选择 Space"}</h2>
           </div>
+          <div className="workspace-summary" aria-label="Workspace summary">
+            <span>{activeStacks.length} Stacks</span>
+            <span>{activeSavedTabCount} Saved</span>
+          </div>
           <button
             className="icon-button primary"
             data-testid="add-stack"
@@ -386,7 +398,7 @@ export const App = () => {
             title="新增 Stack"
             onClick={createNewStack}
           >
-            +
+            <Icon name="plus" />
           </button>
         </header>
 
@@ -432,7 +444,7 @@ export const App = () => {
                     title="重命名 Stack"
                     onClick={() => renameCurrentStack(stack.id, stack.name)}
                   >
-                    ✎
+                    <Icon name="edit" />
                   </button>
                   <button
                     data-testid="delete-stack"
@@ -440,7 +452,7 @@ export const App = () => {
                     title="删除 Stack"
                     onClick={() => removeCurrentStack(stack.id, stack.name)}
                   >
-                    ×
+                    <Icon name="trash" />
                   </button>
                 </div>
               </header>
@@ -463,7 +475,7 @@ export const App = () => {
                         writeDragPayload(event, { type: "saved-tab", tabId: tab.id });
                       }}
                     >
-                      <span className="favicon">{tab.faviconUrl ? <img src={tab.faviconUrl} alt="" /> : "◇"}</span>
+                      <span className="favicon">{tab.faviconUrl ? <img src={tab.faviconUrl} alt="" /> : <Icon name="link" />}</span>
                       <span>
                         <strong>{tab.title}</strong>
                         <small>{tab.description || tab.url}</small>
@@ -490,7 +502,7 @@ export const App = () => {
               title="去除重复 Tab"
               onClick={() => void dedupeOpenTabs()}
             >
-              ⧉
+              <Icon name="copy" />
             </button>
             <button
               className="tiny-button"
@@ -498,7 +510,7 @@ export const App = () => {
               title="刷新"
               onClick={() => void refreshOpenTabs()}
             >
-              ↻
+              <Icon name="refresh" />
             </button>
           </div>
         </header>
@@ -528,7 +540,7 @@ export const App = () => {
                 onClick={() => toggleOpenBlock(block.windowId)}
                 onDragStart={(event) => writeDragPayload(event, { type: "open-block", windowId: block.windowId })}
               >
-                <span aria-hidden="true">{collapsedOpenBlockIds.has(block.windowId) ? "▸" : "▾"}</span>
+                <Icon name={collapsedOpenBlockIds.has(block.windowId) ? "chevron-right" : "chevron-down"} />
                 <span>{block.label}</span>
               </button>
               {!collapsedOpenBlockIds.has(block.windowId) &&
@@ -545,7 +557,7 @@ export const App = () => {
                       writeDragPayload(event, { type: "open-tab", tab });
                     }}
                   >
-                    <span className="favicon">{tab.faviconUrl ? <img src={tab.faviconUrl} alt="" /> : "◇"}</span>
+                    <span className="favicon">{tab.faviconUrl ? <img src={tab.faviconUrl} alt="" /> : <Icon name="link" />}</span>
                     <span>
                       <strong>{tab.title}</strong>
                       <small>{tab.url}</small>
@@ -661,6 +673,60 @@ const renderGroup = (
         );
       })}
     </section>
+  );
+};
+
+const Icon = ({ name }: { name: IconName }) => {
+  const paths: Record<IconName, React.ReactNode> = {
+    "chevron-down": <path d="m6 9 6 6 6-6" />,
+    "chevron-right": <path d="m9 6 6 6-6 6" />,
+    copy: (
+      <>
+        <rect width="10" height="10" x="8" y="8" rx="2" />
+        <path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+      </>
+    ),
+    edit: (
+      <>
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+      </>
+    ),
+    link: (
+      <>
+        <path d="M10 13a5 5 0 0 0 7.1 0l1.4-1.4a5 5 0 0 0-7.1-7.1l-.8.8" />
+        <path d="M14 11a5 5 0 0 0-7.1 0l-1.4 1.4a5 5 0 0 0 7.1 7.1l.8-.8" />
+      </>
+    ),
+    plus: (
+      <>
+        <path d="M12 5v14" />
+        <path d="M5 12h14" />
+      </>
+    ),
+    refresh: (
+      <>
+        <path d="M21 12a9 9 0 0 1-15.3 6.4L3 16" />
+        <path d="M3 21v-5h5" />
+        <path d="M3 12A9 9 0 0 1 18.3 5.6L21 8" />
+        <path d="M21 3v5h-5" />
+      </>
+    ),
+    trash: (
+      <>
+        <path d="M3 6h18" />
+        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+        <path d="M19 6 18 20a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+        <path d="M10 11v6" />
+        <path d="M14 11v6" />
+      </>
+    )
+  };
+
+  return (
+    <svg aria-hidden="true" className="button-icon" focusable="false" viewBox="0 0 24 24">
+      {paths[name]}
+    </svg>
   );
 };
 
