@@ -35,15 +35,16 @@ test.describe("built Chrome extension package", () => {
     const manifest = JSON.parse(await readFile(path.join(extensionPath, "manifest.json"), "utf8"));
     const chromeVersion = await getNearestGitTagChromeVersion();
 
-    expect(manifest.name).toBe(`Tab Manager ${chromeVersion}`);
+    expect(manifest.name).toBe("TabDock");
     expect(manifest.version).toBe(chromeVersion);
     expect(manifest.version_name).toBe(chromeVersion);
+    expect(manifest.action.default_title).toBe("TabDock");
   });
 
   test("loads dist as a headed Chrome extension and overrides the new tab page", async () => {
     test.skip(Boolean(process.env.CI), "Chrome extension newtab override requires headed Chromium.");
 
-    const userDataDir = await mkdtemp(path.join(tmpdir(), "tabmanager-extension-"));
+    const userDataDir = await mkdtemp(path.join(tmpdir(), "tabdock-extension-"));
     const context = await chromium.launchPersistentContext(userDataDir, {
       headless: false,
       args: [
@@ -56,7 +57,7 @@ test.describe("built Chrome extension package", () => {
       const page = await context.newPage();
       await page.goto("chrome://newtab/");
 
-      await expect(page).toHaveTitle("Tab Manager");
+      await expect(page).toHaveTitle("TabDock");
       await expect(page.getByTestId("tab-manager-shell")).toBeVisible();
       expect(page.url()).toMatch(/^chrome-extension:\/\/.+\/index\.html$/);
 

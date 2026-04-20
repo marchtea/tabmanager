@@ -1,12 +1,12 @@
-# Chrome Tab Manager PRD
+# Chrome TabDock PRD
 
 ## 1. 背景与目标
 
-本产品是一个参考 Stackable 交互形态的 Chrome Tab Manager。第一版以 Chrome Extension 的新标签页为主入口，帮助用户把当前打开的 Chrome tabs 整理为本地保存的工作区结构。
+本产品是一个参考 Stackable 交互形态的 Chrome TabDock。第一版以 Chrome Extension 的新标签页为主入口，帮助用户把当前打开的 Chrome tabs 整理为本地保存的工作区结构。
 
 MVP 目标：
 
-- 替换 Chrome New Tab 页面，打开新标签页即进入 Tab Manager。
+- 替换 Chrome New Tab 页面，打开新标签页即进入 TabDock。
 - 管理本地保存的 Spaces、Stacks 和 Tabs。
 - 右侧展示当前 Chrome Profile 下所有打开的 tabs，按 Chrome window 分 block。
 - 支持从当前打开 tabs 拖拽保存到 workspace/stack。
@@ -124,7 +124,7 @@ Saved Tab 操作：
 - 每个 window 是一个 block。
 - Block 标题展示 tab 数量和 window 标识，例如 `Window 1 · 12 tabs`。
 - 每个 block 内展示该 window 的 tabs。
-- 排除当前 Tab Manager 新标签页自身，避免管理器页面污染列表。
+- 排除当前 TabDock 新标签页自身，避免管理器页面污染列表。
 - 对无法访问的页面，例如 `chrome://`、Chrome Web Store、扩展页面，仍展示 title/URL；meta description 可为空。
 
 拖拽行为：
@@ -223,7 +223,7 @@ MVP 需要：
 
 ### 6.1 核心验收标准
 
-- 打开新标签页时进入 Tab Manager。
+- 打开新标签页时进入 TabDock。
 - 能创建、切换、重命名、删除 space。
 - 能创建、重命名、删除、拖拽排序 stack。
 - 能从右侧 open tab 拖入 stack 并保存。

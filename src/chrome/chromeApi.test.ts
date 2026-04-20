@@ -23,7 +23,7 @@ import {
 import type { ChromeLike } from "./chromeTypes";
 
 describe("chrome api adapter", () => {
-  it("groups open tabs by window and excludes the Tab Manager page itself", async () => {
+  it("groups open tabs by window and excludes the TabDock page itself", async () => {
     const chrome = {
       tabs: {
         query: vi.fn().mockResolvedValue([
@@ -86,7 +86,7 @@ describe("chrome api adapter", () => {
     expect(chrome.tabs.create).toHaveBeenCalledWith({ url: "https://new.test" });
   });
 
-  it("focuses an existing Tab Manager tab before opening a new manager page", async () => {
+  it("focuses an existing TabDock tab before opening a new manager page", async () => {
     const chrome = {
       runtime: {
         id: "abc",

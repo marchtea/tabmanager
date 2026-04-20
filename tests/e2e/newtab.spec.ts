@@ -1,13 +1,13 @@
 import { expect, test } from "@playwright/test";
 
-test.describe("Tab Manager newtab MVP", () => {
+test.describe("TabDock newtab MVP", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await expect(page.getByTestId("tab-manager-shell")).toBeVisible();
   });
 
   test("renders the three-column shell and searches open tabs", async ({ page }) => {
-    await expect(page.getByTestId("sidebar")).toContainText("Tab Manager");
+    await expect(page.getByTestId("sidebar")).toContainText("TabDock");
     await expect(page.getByTestId("workspace")).toContainText("创建第一个 Space");
     await expect(page.getByTestId("open-tabs-panel")).toContainText("React");
     await expect(page.getByTestId("space-section-label")).toHaveText("Spaces");

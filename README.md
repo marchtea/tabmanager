@@ -1,12 +1,12 @@
-# Tab Manager
+# TabDock
 
-Tab Manager 是一个 Chrome 新标签页扩展，用来把当前浏览器里打开的 tabs 整理成本地保存的工作区。它会替换 Chrome New Tab 页面，并提供 Spaces、Stacks、Saved Tabs 三层结构，适合按项目、主题或上下文保存和恢复浏览状态。
+TabDock 是一个 Chrome 新标签页扩展，用来把当前浏览器里打开的 tabs 整理成本地保存的工作区。它会替换 Chrome New Tab 页面，并提供 Spaces、Stacks、Saved Tabs 三层结构，适合按项目、主题或上下文保存和恢复浏览状态。
 
 项目目前是 MVP 阶段，重点是本地优先的 tab 管理体验：不依赖账号系统，不做云同步，也不会把保存的内容写入 Chrome bookmarks。
 
 ## 主要功能
 
-- 替换 Chrome 新标签页入口，打开新标签页时进入 Tab Manager。
+- 替换 Chrome 新标签页入口，打开新标签页时进入 TabDock。
 - 管理本地保存的 `Space`、`Stack` 和 `Saved Tab`。
 - 读取当前 Chrome Profile 下已打开的 tabs，并按 Chrome window 分组展示。
 - 将右侧当前打开的 tab 拖入 stack 保存。
@@ -112,7 +112,7 @@ npm run build
 3. 点击 Load unpacked
 4. 选择本仓库的 `dist/` 目录
 
-加载后，新建 Chrome tab 会进入 Tab Manager 页面。
+加载后，新建 Chrome tab 会进入 TabDock 页面。
 
 ## 打包 zip
 
@@ -125,7 +125,7 @@ npm run package:zip
 脚本会先执行生产构建，然后把 `dist/` 内容压缩为：
 
 ```text
-release/tabmanager-extension.zip
+release/tabdock-extension.zip
 ```
 
 ## 发布流程
@@ -136,7 +136,7 @@ release/tabmanager-extension.zip
 
 1. 安装依赖
 2. 执行 `npm run package:zip`
-3. 将 zip 重命名为 `tabmanager-extension-<tag>.zip`
+3. 将 zip 重命名为 `tabdock-extension-<tag>.zip`
 4. 上传 GitHub Actions artifact
 5. 创建或更新同名 GitHub Release，并上传 zip 产物
 

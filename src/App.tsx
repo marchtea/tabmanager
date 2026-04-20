@@ -529,7 +529,7 @@ export const App = () => {
             <span className="brand-mark" aria-hidden="true">
               TM
             </span>
-            <h1>Tab Manager</h1>
+            <h1>TabDock</h1>
           </div>
           <button className="icon-button" data-testid="add-space" type="button" title="新增 Space" onClick={createNewSpace}>
             <Icon name="plus" />

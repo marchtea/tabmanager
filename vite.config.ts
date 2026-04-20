@@ -40,13 +40,12 @@ export default defineConfig({
 });
 
 const manifestDescriptionLimit = 132;
-const manifestNameLimit = 45;
-const extensionBaseName = "Tab Manager";
-const generatedDescriptionPrefix = "Tab Manager workspace manager.";
+const extensionBaseName = "TabDock";
+const generatedDescriptionPrefix = "TabDock workspace manager.";
 
 function extensionManifestMetadataPlugin(): Plugin {
   return {
-    name: "tabmanager-extension-manifest-metadata",
+    name: "tabdock-extension-manifest-metadata",
     apply: "build",
     async closeBundle() {
       const manifestPath = path.resolve("dist", "manifest.json");
@@ -60,7 +59,7 @@ function extensionManifestMetadataPlugin(): Plugin {
         version_name?: string;
       };
       const chromeVersion = formatChromeVersion(getNearestGitTagName(), manifest.version ?? "0.0.0");
-      const extensionName = formatExtensionName(chromeVersion);
+      const extensionName = extensionBaseName;
 
       await writeFile(
         manifestPath,
@@ -115,17 +114,6 @@ function formatExtensionDescription(branchName: string): string {
       : branchName;
 
   return `${generatedDescriptionPrefix}${suffixPrefix}${branch}`;
-}
-
-function formatExtensionName(chromeVersion: string): string {
-  const suffixPrefix = " ";
-  const maxVersionLength = manifestNameLimit - extensionBaseName.length - suffixPrefix.length;
-  const version =
-    chromeVersion.length > maxVersionLength
-      ? chromeVersion.slice(0, Math.max(0, maxVersionLength))
-      : chromeVersion;
-
-  return `${extensionBaseName}${suffixPrefix}${version}`;
 }
 
 function formatChromeVersion(tagName: string, fallbackVersion: string): string {

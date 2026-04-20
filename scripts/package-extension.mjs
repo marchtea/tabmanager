@@ -6,7 +6,7 @@ import path from "node:path";
 const rootDir = process.cwd();
 const distDir = path.join(rootDir, "dist");
 const releaseDir = path.join(rootDir, "release");
-const zipPath = path.join(releaseDir, "tabmanager-extension.zip");
+const zipPath = path.join(releaseDir, "tabdock-extension.zip");
 
 execFileSync("npm", ["run", "build"], {
   cwd: rootDir,

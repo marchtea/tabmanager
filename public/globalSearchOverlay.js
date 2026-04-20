@@ -128,7 +128,7 @@
   const panel = document.createElement("section");
   panel.className = "panel";
   panel.setAttribute("role", "dialog");
-  panel.setAttribute("aria-label", "Tab Manager global search");
+  panel.setAttribute("aria-label", "TabDock global search");
 
   const input = document.createElement("input");
   input.type = "search";
