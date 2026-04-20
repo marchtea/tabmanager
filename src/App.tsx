@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  closeOpenTab,
+  closeOpenWindow,
   closeDuplicateOpenTabs,
   focusOrCreateTab,
   getChrome,
@@ -10,7 +12,8 @@ import {
   moveOpenTabToWindow,
   saveSettings,
   saveWorkspace,
-  searchRecentHistory
+  searchRecentHistory,
+  subscribeToOpenTabsChanges
 } from "./chrome/chromeApi";
 import { buildSearchGroups } from "./domain/search";
 import {
@@ -149,6 +152,16 @@ export const App = () => {
   useEffect(() => {
     void refreshOpenTabs();
   }, [refreshOpenTabs]);
+
+  useEffect(() => {
+    if (!chromeApi) {
+      return;
+    }
+
+    return subscribeToOpenTabsChanges(chromeApi, () => {
+      void refreshOpenTabs();
+    });
+  }, [chromeApi, refreshOpenTabs]);
 
   useEffect(() => {
     if (!loaded) {
@@ -351,6 +364,32 @@ export const App = () => {
     } finally {
       setIsDeduplicating(false);
     }
+  };
+
+  const handleCloseOpenTab = async (tab: OpenTab, event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (chromeApi) {
+      await closeOpenTab(chromeApi, tab.id);
+      await refreshOpenTabs();
+      return;
+    }
+
+    setOpenBlocks((blocks) => removeOpenTabFromBlocks(blocks, tab.id));
+  };
+
+  const handleCloseOpenWindow = async (windowId: number, event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (chromeApi) {
+      await closeOpenWindow(chromeApi, windowId);
+      await refreshOpenTabs();
+      return;
+    }
+
+    setOpenBlocks((blocks) => relabelOpenBlocks(blocks.filter((block) => block.windowId !== windowId)));
   };
 
   const renameCurrentSpace = (spaceId: string, currentName: string) => {
@@ -652,27 +691,52 @@ export const App = () => {
               }}
               onDrop={(event) => void handleDropOnOpenBlock(block.windowId, event)}
             >
-              <button
+              <div
                 aria-expanded={!collapsedOpenBlockIds.has(block.windowId)}
                 className="open-block-title"
                 data-testid="open-block-title"
                 draggable
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => toggleOpenBlock(block.windowId)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    toggleOpenBlock(block.windowId);
+                  }
+                }}
                 onDragStart={(event) => writeDragPayload(event, { type: "open-block", windowId: block.windowId })}
               >
-                <Icon name={collapsedOpenBlockIds.has(block.windowId) ? "chevron-right" : "chevron-down"} />
-                <span>{block.label}</span>
-              </button>
+                <span className="open-block-title-content">
+                  <Icon name={collapsedOpenBlockIds.has(block.windowId) ? "chevron-right" : "chevron-down"} />
+                  <span>{block.label}</span>
+                </span>
+                <button
+                  className="open-row-close"
+                  data-testid="close-open-window"
+                  type="button"
+                  title="关闭 Window"
+                  onClick={(event) => void handleCloseOpenWindow(block.windowId, event)}
+                >
+                  <Icon name="trash" />
+                </button>
+              </div>
               {!collapsedOpenBlockIds.has(block.windowId) &&
                 block.tabs.map((tab) => (
-                  <button
+                  <div
                     className="open-tab"
                     data-testid="open-tab"
                     draggable
                     key={`${tab.windowId}:${tab.id}`}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => void openUrl(tab.url)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        void openUrl(tab.url);
+                      }
+                    }}
                     onDragStart={(event) => {
                       event.stopPropagation();
                       writeDragPayload(event, { type: "open-tab", tab });
@@ -683,7 +747,16 @@ export const App = () => {
                       <strong>{tab.title}</strong>
                       <small>{tab.url}</small>
                     </span>
-                  </button>
+                    <button
+                      className="open-row-close"
+                      data-testid="close-open-tab"
+                      type="button"
+                      title="关闭 Tab"
+                      onClick={(event) => void handleCloseOpenTab(tab, event)}
+                    >
+                      <Icon name="trash" />
+                    </button>
+                  </div>
                 ))}
             </section>
           ))}
@@ -974,11 +1047,23 @@ const moveOpenTabBetweenBlocks = (
       }
       return [block];
     })
-    .map((block, index) => ({
-      ...block,
-      label: `Window ${index + 1} · ${block.tabs.length} tabs`
-    }));
+    .map(labelOpenTabBlock);
 };
+
+const removeOpenTabFromBlocks = (blocks: OpenTabBlock[], tabId: number): OpenTabBlock[] =>
+  blocks
+    .flatMap((block) => {
+      const tabs = block.tabs.filter((tab) => tab.id !== tabId);
+      return tabs.length > 0 ? [{ ...block, tabs }] : [];
+    })
+    .map(labelOpenTabBlock);
+
+const relabelOpenBlocks = (blocks: OpenTabBlock[]): OpenTabBlock[] => blocks.map(labelOpenTabBlock);
+
+const labelOpenTabBlock = (block: OpenTabBlock, index: number): OpenTabBlock => ({
+  ...block,
+  label: `Window ${index + 1} · ${block.tabs.length} tabs`
+});
 
 const writeDragPayload = (event: React.DragEvent, payload: DragPayload) => {
   event.dataTransfer.effectAllowed = "move";

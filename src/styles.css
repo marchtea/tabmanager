@@ -517,6 +517,7 @@ kbd {
   border-radius: var(--radius-card);
   color: var(--charcoal);
   background: var(--cream);
+  cursor: pointer;
   text-align: left;
   transition:
     border-color 140ms ease,
@@ -737,19 +738,39 @@ kbd {
   position: sticky;
   z-index: 1;
   top: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
   width: 100%;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 7px 8px;
   border: 0;
   border-radius: var(--radius-control);
   color: var(--charcoal);
-  background: var(--surface-muted);
+  background: var(--surface);
+  cursor: grab;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0;
   text-align: left;
+}
+
+.open-block-title:active {
+  cursor: grabbing;
+}
+
+.open-block-title-content {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.open-block-title-content > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .open-block-title .button-icon {
@@ -758,7 +779,7 @@ kbd {
 }
 
 .open-block-title:hover {
-  background: var(--surface-hover);
+  background: #f4f1ea;
 }
 
 .open-block.is-collapsed {
@@ -766,11 +787,50 @@ kbd {
 }
 
 .open-tab {
-  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-columns: 20px minmax(0, 1fr) 28px;
   gap: 8px;
   min-height: 48px;
   padding: 7px 8px;
   border-radius: 10px;
+}
+
+.open-row-close {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  align-self: center;
+  place-items: center;
+  border: 0;
+  border-radius: 9999px;
+  color: var(--charcoal-strong);
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    background-color 140ms ease,
+    opacity 140ms ease,
+    visibility 140ms ease;
+  visibility: hidden;
+}
+
+.open-row-close:hover {
+  background: rgb(28 28 28 / 7%);
+}
+
+.open-tab:hover .open-row-close,
+.open-tab:focus-within .open-row-close,
+.open-block-title:hover .open-row-close,
+.open-block-title:focus-within .open-row-close {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+}
+
+.open-tab:focus-visible,
+.open-block-title:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  box-shadow: var(--focus-shadow);
 }
 
 .open-tab .favicon {

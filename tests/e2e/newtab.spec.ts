@@ -477,6 +477,249 @@ test.describe("Open tabs panel duplicate cleanup", () => {
   });
 });
 
+test.describe("Open tabs panel live updates and close actions", () => {
+  test("refreshes the open tabs list when Chrome tab create and remove events fire", async ({ page }) => {
+    await page.addInitScript(() => {
+      const tabs = [
+        { id: 1, windowId: 10, title: "React", url: "https://react.dev" }
+      ];
+      const createdListeners: Array<(tab: unknown) => void> = [];
+      const removedListeners: Array<(tabId: number, removeInfo: unknown) => void> = [];
+
+      Object.assign(window, {
+        __TAB_MANAGER_TEST__: { tabs, createdListeners, removedListeners }
+      });
+      Object.defineProperty(window, "chrome", {
+        configurable: true,
+        value: {
+          runtime: { id: "abc" },
+          storage: {
+            local: {
+              get: async () => ({}),
+              set: async () => undefined
+            }
+          },
+          tabs: {
+            query: async () => tabs.map((tab) => ({ ...tab })),
+            onCreated: {
+              addListener: (listener: (tab: unknown) => void) => createdListeners.push(listener),
+              removeListener: (listener: (tab: unknown) => void) => {
+                const index = createdListeners.indexOf(listener);
+                if (index >= 0) {
+                  createdListeners.splice(index, 1);
+                }
+              }
+            },
+            onRemoved: {
+              addListener: (listener: (tabId: number, removeInfo: unknown) => void) => removedListeners.push(listener),
+              removeListener: (listener: (tabId: number, removeInfo: unknown) => void) => {
+                const index = removedListeners.indexOf(listener);
+                if (index >= 0) {
+                  removedListeners.splice(index, 1);
+                }
+              }
+            }
+          }
+        }
+      });
+    });
+
+    await page.goto("/");
+    await expect(page.getByTestId("tab-manager-shell")).toBeVisible();
+    await expect(page.getByTestId("open-tab")).toHaveCount(1);
+
+    await page.evaluate(() => {
+      const state = (window as unknown as {
+        __TAB_MANAGER_TEST__: {
+          tabs: Array<{ id: number; windowId: number; title: string; url: string }>;
+          createdListeners: Array<(tab: unknown) => void>;
+          removedListeners: Array<(tabId: number, removeInfo: unknown) => void>;
+        };
+      }).__TAB_MANAGER_TEST__;
+      const tab = { id: 2, windowId: 10, title: "Vite", url: "https://vite.dev" };
+      state.tabs.push(tab);
+      for (const listener of state.createdListeners) {
+        listener(tab);
+      }
+    });
+
+    await expect(page.getByTestId("open-tab")).toHaveCount(2);
+    await expect(page.getByTestId("open-tabs-panel")).toContainText("Vite");
+
+    await page.evaluate(() => {
+      const state = (window as unknown as {
+        __TAB_MANAGER_TEST__: {
+          tabs: Array<{ id: number; windowId: number; title: string; url: string }>;
+          removedListeners: Array<(tabId: number, removeInfo: unknown) => void>;
+        };
+      }).__TAB_MANAGER_TEST__;
+      state.tabs.splice(state.tabs.findIndex((tab) => tab.id === 1), 1);
+      for (const listener of state.removedListeners) {
+        listener(1, { windowId: 10, isWindowClosing: false });
+      }
+    });
+
+    await expect(page.getByTestId("open-tab")).toHaveCount(1);
+    await expect(page.getByTestId("open-tabs-panel")).not.toContainText("React");
+  });
+
+  test("closes a hovered open tab without opening it", async ({ page }) => {
+    await page.addInitScript(() => {
+      const tabs = [
+        { id: 1, windowId: 10, title: "React", url: "https://react.dev" },
+        { id: 2, windowId: 10, title: "Vite", url: "https://vite.dev" }
+      ];
+      const openedUrls: string[] = [];
+
+      Object.assign(window, { __TAB_MANAGER_TEST__: { tabs, openedUrls } });
+      Object.defineProperty(window, "chrome", {
+        configurable: true,
+        value: {
+          runtime: { id: "abc" },
+          storage: {
+            local: {
+              get: async () => ({}),
+              set: async () => undefined
+            }
+          },
+          tabs: {
+            query: async () => tabs.map((tab) => ({ ...tab })),
+            update: async (_tabId: number, updateProperties: { url?: string }) => {
+              if (updateProperties.url) {
+                openedUrls.push(updateProperties.url);
+              }
+              return {};
+            },
+            create: async ({ url }: { url: string }) => {
+              openedUrls.push(url);
+              return {};
+            },
+            remove: async (tabIds: number | number[]) => {
+              const ids = Array.isArray(tabIds) ? tabIds : [tabIds];
+              for (const id of ids) {
+                const index = tabs.findIndex((tab) => tab.id === id);
+                if (index >= 0) {
+                  tabs.splice(index, 1);
+                }
+              }
+            }
+          }
+        }
+      });
+    });
+
+    await page.goto("/");
+    await expect(page.getByTestId("tab-manager-shell")).toBeVisible();
+
+    const reactTab = page.getByTestId("open-tab").filter({ hasText: "React" });
+    await reactTab.hover();
+    await expect(reactTab.getByTestId("close-open-tab")).toBeVisible();
+    await reactTab.getByTestId("close-open-tab").click();
+
+    await expect(page.getByTestId("open-tabs-panel")).not.toContainText("React");
+    await expect(page.getByTestId("open-tabs-panel")).toContainText("Vite");
+    await expect.poll(async () =>
+      page.evaluate(() =>
+        (window as unknown as { __TAB_MANAGER_TEST__: { openedUrls: string[] } }).__TAB_MANAGER_TEST__.openedUrls
+      )
+    ).toEqual([]);
+  });
+
+  test("closes a hovered open window block", async ({ page }) => {
+    await page.addInitScript(() => {
+      const tabs = [
+        { id: 1, windowId: 10, title: "React", url: "https://react.dev" },
+        { id: 2, windowId: 10, title: "Vite", url: "https://vite.dev" },
+        { id: 3, windowId: 20, title: "Docs", url: "https://docs.test" }
+      ];
+
+      Object.defineProperty(window, "chrome", {
+        configurable: true,
+        value: {
+          runtime: { id: "abc" },
+          storage: {
+            local: {
+              get: async () => ({}),
+              set: async () => undefined
+            }
+          },
+          tabs: {
+            query: async () => tabs.map((tab) => ({ ...tab }))
+          },
+          windows: {
+            remove: async (windowId: number) => {
+              for (let index = tabs.length - 1; index >= 0; index -= 1) {
+                if (tabs[index].windowId === windowId) {
+                  tabs.splice(index, 1);
+                }
+              }
+            }
+          }
+        }
+      });
+    });
+
+    await page.goto("/");
+    await expect(page.getByTestId("tab-manager-shell")).toBeVisible();
+
+    const firstWindow = page.getByTestId("open-block").filter({ hasText: "Window 1" });
+    await firstWindow.getByTestId("open-block-title").hover();
+    await expect(firstWindow.getByTestId("close-open-window")).toBeVisible();
+    await firstWindow.getByTestId("close-open-window").click();
+
+    await expect(page.getByTestId("open-block")).toHaveCount(1);
+    await expect(page.getByTestId("open-tabs-panel")).not.toContainText("React");
+    await expect(page.getByTestId("open-tabs-panel")).not.toContainText("Vite");
+    await expect(page.getByTestId("open-tabs-panel")).toContainText("Docs");
+  });
+
+  test("keeps sticky open window titles readable while the open tabs list scrolls", async ({ page }) => {
+    await page.addInitScript(() => {
+      const tabs = Array.from({ length: 18 }, (_, index) => ({
+        id: index + 1,
+        windowId: index < 9 ? 10 : 20,
+        title: `Scrollable Tab ${index + 1}`,
+        url: `https://scroll-${index + 1}.test`
+      }));
+
+      Object.defineProperty(window, "chrome", {
+        configurable: true,
+        value: {
+          runtime: { id: "abc" },
+          storage: {
+            local: {
+              get: async () => ({}),
+              set: async () => undefined
+            }
+          },
+          tabs: {
+            query: async () => tabs.map((tab) => ({ ...tab }))
+          }
+        }
+      });
+    });
+
+    await page.goto("/");
+    await expect(page.getByTestId("tab-manager-shell")).toBeVisible();
+    await page.locator(".open-blocks").evaluate((element) => {
+      element.scrollTop = 160;
+    });
+
+    await expect.poll(async () =>
+      page.getByTestId("open-block-title").first().evaluate((element) => {
+        const style = window.getComputedStyle(element);
+        return {
+          backgroundColor: style.backgroundColor,
+          position: style.position
+        };
+      })
+    ).toEqual({
+      backgroundColor: "rgb(252, 251, 248)",
+      position: "sticky"
+    });
+  });
+});
+
 const acceptNextDialog = async (page: import("@playwright/test").Page, value: string) => {
   page.once("dialog", async (dialog) => {
     await dialog.accept(value);

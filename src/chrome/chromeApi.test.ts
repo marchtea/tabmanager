@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   closeDuplicateOpenTabs,
+  closeOpenTab,
+  closeOpenWindow,
   buildGlobalSearchGroups,
   focusOrCreateTab,
   focusOrOpenTabManager,
@@ -15,7 +17,8 @@ import {
   moveOpenTabToWindow,
   saveSettings,
   saveWorkspace,
-  searchRecentHistory
+  searchRecentHistory,
+  subscribeToOpenTabsChanges
 } from "./chromeApi";
 import type { ChromeLike } from "./chromeTypes";
 
@@ -138,6 +141,72 @@ describe("chrome api adapter", () => {
 
   it("ignores open tab window moves when the Chrome move API is unavailable", async () => {
     await expect(moveOpenTabToWindow({}, 4, 12)).resolves.toBeUndefined();
+  });
+
+  it("closes an open Chrome tab", async () => {
+    const chrome = {
+      tabs: {
+        remove: vi.fn().mockResolvedValue(undefined)
+      }
+    } satisfies ChromeLike;
+
+    await closeOpenTab(chrome, 4);
+
+    expect(chrome.tabs.remove).toHaveBeenCalledWith(4);
+  });
+
+  it("ignores tab closes when the Chrome remove API is unavailable", async () => {
+    await expect(closeOpenTab({}, 4)).resolves.toBeUndefined();
+  });
+
+  it("closes an open Chrome window", async () => {
+    const chrome = {
+      windows: {
+        remove: vi.fn().mockResolvedValue(undefined)
+      }
+    } satisfies ChromeLike;
+
+    await closeOpenWindow(chrome, 12);
+
+    expect(chrome.windows.remove).toHaveBeenCalledWith(12);
+  });
+
+  it("ignores window closes when the Chrome remove API is unavailable", async () => {
+    await expect(closeOpenWindow({}, 12)).resolves.toBeUndefined();
+  });
+
+  it("subscribes to open tab create and remove events and cleans up listeners", () => {
+    const chrome = {
+      tabs: {
+        onCreated: {
+          addListener: vi.fn(),
+          removeListener: vi.fn()
+        },
+        onRemoved: {
+          addListener: vi.fn(),
+          removeListener: vi.fn()
+        }
+      }
+    } satisfies ChromeLike;
+    const onChange = vi.fn();
+
+    const cleanup = subscribeToOpenTabsChanges(chrome, onChange);
+    const createdListener = chrome.tabs.onCreated.addListener.mock.calls[0][0];
+    const removedListener = chrome.tabs.onRemoved.addListener.mock.calls[0][0];
+
+    createdListener({ id: 4, windowId: 12, url: "https://created.test" });
+    removedListener(4, { windowId: 12, isWindowClosing: false });
+    cleanup();
+
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(chrome.tabs.onCreated.removeListener).toHaveBeenCalledWith(createdListener);
+    expect(chrome.tabs.onRemoved.removeListener).toHaveBeenCalledWith(removedListener);
+  });
+
+  it("returns a no-op open tab changes cleanup when Chrome tab events are unavailable", () => {
+    const cleanup = subscribeToOpenTabsChanges({}, vi.fn());
+
+    expect(cleanup()).toBeUndefined();
   });
 
   it("closes duplicate open tabs across all Chrome windows and keeps the first matching URL", async () => {

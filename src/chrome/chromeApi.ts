@@ -98,6 +98,30 @@ export const moveOpenTabToWindow = async (
   await chromeApi.tabs?.move?.(tabId, { windowId: targetWindowId, index: -1 });
 };
 
+export const closeOpenTab = async (chromeApi: ChromeLike, tabId: number): Promise<void> => {
+  await chromeApi.tabs?.remove?.(tabId);
+};
+
+export const closeOpenWindow = async (chromeApi: ChromeLike, windowId: number): Promise<void> => {
+  await chromeApi.windows?.remove?.(windowId);
+};
+
+export const subscribeToOpenTabsChanges = (
+  chromeApi: ChromeLike,
+  onChange: () => void
+): (() => void) => {
+  const onCreated = () => onChange();
+  const onRemoved = () => onChange();
+
+  chromeApi.tabs?.onCreated?.addListener?.(onCreated);
+  chromeApi.tabs?.onRemoved?.addListener?.(onRemoved);
+
+  return () => {
+    chromeApi.tabs?.onCreated?.removeListener?.(onCreated);
+    chromeApi.tabs?.onRemoved?.removeListener?.(onRemoved);
+  };
+};
+
 export const closeDuplicateOpenTabs = async (chromeApi: ChromeLike): Promise<number> => {
   const tabs = await listOpenTabRecords(chromeApi);
   const extensionId = chromeApi.runtime?.id;

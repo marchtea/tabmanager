@@ -24,6 +24,11 @@ export type ChromeCommandRecord = {
   shortcut?: string;
 };
 
+export type ChromeTabRemoveInfo = {
+  windowId?: number;
+  isWindowClosing?: boolean;
+};
+
 export type ChromeMessageSender = {
   tab?: ChromeTabRecord;
 };
@@ -52,10 +57,19 @@ export type ChromeLike = {
     ) => Promise<ChromeTabRecord | undefined>;
     create?: (createProperties: { url: string }) => Promise<unknown>;
     remove?: (tabIds: number | number[]) => Promise<void>;
+    onCreated?: {
+      addListener?: (listener: (tab: ChromeTabRecord) => void) => void;
+      removeListener?: (listener: (tab: ChromeTabRecord) => void) => void;
+    };
+    onRemoved?: {
+      addListener?: (listener: (tabId: number, removeInfo: ChromeTabRemoveInfo) => void) => void;
+      removeListener?: (listener: (tabId: number, removeInfo: ChromeTabRemoveInfo) => void) => void;
+    };
   };
   windows?: {
     getAll?: (getInfo: { populate: boolean }) => Promise<ChromeWindowRecord[]>;
     update?: (windowId: number, updateInfo: Record<string, unknown>) => Promise<unknown>;
+    remove?: (windowId: number) => Promise<void>;
   };
   history?: {
     search?: (query: {
