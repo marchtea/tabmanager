@@ -208,6 +208,48 @@ export const deleteStack = (
   };
 };
 
+export const deleteSavedTabs = (
+  state: WorkspaceState,
+  spaceId: string,
+  stackId: string,
+  tabIds: string[],
+  clock: Clock
+): WorkspaceState => {
+  const space = state.spaces[spaceId];
+  const stack = state.stacks[stackId];
+  if (!space || !stack || stack.spaceId !== spaceId || tabIds.length === 0) {
+    return state;
+  }
+
+  const requestedTabIds = [...new Set(tabIds)];
+  const removableTabIds = requestedTabIds.filter((tabId) => {
+    const tab = state.tabs[tabId];
+    return Boolean(tab && tab.spaceId === spaceId && tab.stackId === stackId && stack.tabIds.includes(tabId));
+  });
+  if (removableTabIds.length === 0) {
+    return state;
+  }
+
+  const removableTabIdSet = new Set(removableTabIds);
+  const tabs = { ...state.tabs };
+  for (const tabId of removableTabIds) {
+    delete tabs[tabId];
+  }
+
+  return {
+    ...state,
+    stacks: {
+      ...state.stacks,
+      [stackId]: {
+        ...stack,
+        tabIds: stack.tabIds.filter((tabId) => !removableTabIdSet.has(tabId)),
+        updatedAt: clock()
+      }
+    },
+    tabs
+  };
+};
+
 export const moveStack = (
   state: WorkspaceState,
   spaceId: string,

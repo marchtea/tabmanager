@@ -315,19 +315,31 @@ kbd {
 .space-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
+  background: transparent;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.space-group.is-active {
+  border-color: var(--line);
+  background: var(--surface);
 }
 
 .space-row {
   min-height: 44px;
-  padding: 5px 4px 5px 12px;
+  padding: 5px 6px 5px 10px;
   border: 1px solid transparent;
-  border-radius: var(--radius-card);
+  border-radius: 10px;
 }
 
 .space-row.is-active {
-  border-color: var(--line);
-  background: var(--surface);
+  border-color: transparent;
+  background: var(--surface-muted);
 }
 
 .space-row > button:first-child,
@@ -364,7 +376,9 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding-left: 20px;
+  margin-top: 4px;
+  padding: 6px 0 2px 20px;
+  border-top: 1px solid var(--line);
 }
 
 .stack-tree button {
@@ -472,6 +486,16 @@ kbd {
   white-space: nowrap;
 }
 
+.stack-title {
+  min-width: 0;
+}
+
+.stack-selection-count {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
 .stack-actions {
   display: flex;
   gap: 4px;
@@ -480,7 +504,8 @@ kbd {
 }
 
 .stack-column:hover .stack-actions,
-.stack-actions:focus-within {
+.stack-actions:focus-within,
+.stack-actions.is-active {
   opacity: 1;
 }
 
@@ -488,6 +513,15 @@ kbd {
   width: 28px;
   height: 28px;
   border-radius: 9999px;
+}
+
+.stack-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.stack-column.is-selecting-tabs {
+  border-color: var(--line-strong);
 }
 
 .tab-list,
@@ -527,6 +561,15 @@ kbd {
 
 .saved-tab:hover,
 .open-tab:hover {
+  border-color: var(--line-strong);
+  background: var(--surface);
+}
+
+.saved-tab.is-select-mode {
+  cursor: pointer;
+}
+
+.saved-tab.is-selected {
   border-color: var(--line-strong);
   background: var(--surface);
 }
@@ -577,6 +620,36 @@ kbd {
   width: 14px;
   height: 14px;
   stroke-width: 2.2;
+}
+
+.saved-tab-leading {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+}
+
+.saved-tab-checkbox {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: transparent;
+  background: var(--surface);
+}
+
+.saved-tab-checkbox.is-checked {
+  border-color: var(--charcoal);
+  color: var(--off-white);
+  background: var(--charcoal);
+}
+
+.saved-tab-checkbox .button-icon {
+  width: 11px;
+  height: 11px;
+  stroke-width: 2.8;
 }
 
 .drop-hint,

@@ -132,6 +132,33 @@ test.describe("Tab Manager newtab MVP", () => {
     await expect(page.getByTestId("workspace")).toContainText("创建第一个 Space");
   });
 
+  test("deletes selected saved tabs from a stack", async ({ page }) => {
+    await createSpace(page, "Bulk Delete");
+    await createStack(page, "Reading");
+
+    const stack = stackByName(page, "Reading");
+    await page.getByTestId("open-tab").filter({ hasText: "Chrome Extension Manifest V3" }).dragTo(stack);
+    await page.getByTestId("open-tab").filter({ hasText: "React" }).dragTo(stack);
+    await page.getByTestId("open-tab").filter({ hasText: "Vite" }).dragTo(stack);
+    await expect(stack.getByTestId("saved-tab")).toHaveCount(3);
+
+    await stack.getByTestId("select-stack-tabs").click();
+
+    const reactSavedTab = stack.getByTestId("saved-tab").filter({ hasText: "React" });
+    const viteSavedTab = stack.getByTestId("saved-tab").filter({ hasText: "Vite" });
+    await reactSavedTab.click();
+    await viteSavedTab.click();
+
+    await expect(reactSavedTab).toHaveAttribute("aria-pressed", "true");
+    await expect(viteSavedTab).toHaveAttribute("aria-pressed", "true");
+
+    await stack.getByTestId("delete-selected-tabs").click();
+
+    await expect(stack.getByTestId("saved-tab").filter({ hasText: "React" })).toHaveCount(0);
+    await expect(stack.getByTestId("saved-tab").filter({ hasText: "Vite" })).toHaveCount(0);
+    await expect(stack.getByTestId("saved-tab").filter({ hasText: "Chrome Extension Manifest V3" })).toHaveCount(1);
+  });
+
   test("reorders stacks by dragging the stack header", async ({ page }) => {
     await createSpace(page, "Sort Research");
     await createStack(page, "Alpha");
@@ -151,6 +178,35 @@ test.describe("Tab Manager newtab MVP", () => {
     await spaceByName(page, "Gamma Space").getByTestId("space-title").dragTo(spaceByName(page, "Alpha Space"));
 
     await expectSpaceOrder(page, ["Gamma Space", "Alpha Space", "Beta Space"]);
+  });
+
+  test("renders active space title and stack categories as one integrated group", async ({ page }) => {
+    await createSpace(page, "Unified Space");
+    await createStack(page, "Category A");
+
+    const group = spaceByName(page, "Unified Space");
+
+    await expect.poll(async () =>
+      group.evaluate((element) => {
+        const groupStyle = window.getComputedStyle(element);
+        const stackTree = element.querySelector(".stack-tree");
+        const treeStyle = stackTree ? window.getComputedStyle(stackTree) : null;
+
+        return {
+          groupBorderTopWidth: groupStyle.borderTopWidth,
+          groupBorderTopStyle: groupStyle.borderTopStyle,
+          treeBorderTopWidth: treeStyle?.borderTopWidth ?? "",
+          treeBorderTopStyle: treeStyle?.borderTopStyle ?? "",
+          treePaddingLeft: treeStyle?.paddingLeft ?? ""
+        };
+      })
+    ).toEqual({
+      groupBorderTopWidth: "1px",
+      groupBorderTopStyle: "solid",
+      treeBorderTopWidth: "1px",
+      treeBorderTopStyle: "solid",
+      treePaddingLeft: "20px"
+    });
   });
 
   test("selects a stack search result with Enter", async ({ page }) => {

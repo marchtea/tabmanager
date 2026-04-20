@@ -3,6 +3,7 @@ import {
   createIdGenerator,
   createSpace,
   createStack,
+  deleteSavedTabs,
   deleteSpace,
   deleteStack,
   emptyWorkspaceState,
@@ -251,6 +252,56 @@ describe("workspace store", () => {
     expect(next.stacks["stack-1"]).toBeUndefined();
     expect(next.tabs["tab-1"]).toBeUndefined();
     expect(next.spaces["space-1"].stackIds).toEqual(["stack-2"]);
+  });
+
+  it("deletes selected saved tabs from one stack immutably", () => {
+    let state = emptyWorkspaceState();
+    state = createSpace(state, "Workspace", clock, () => "space-1");
+    state = createStack(state, "space-1", "Reading", clock, () => "stack-1");
+    state = createStack(state, "space-1", "Archive", clock, () => "stack-2");
+    state = saveOpenTabToStack(
+      state,
+      "space-1",
+      "stack-1",
+      { id: 1, windowId: 1, title: "React", url: "https://react.dev" },
+      0,
+      clock,
+      () => "tab-1"
+    );
+    state = saveOpenTabToStack(
+      state,
+      "space-1",
+      "stack-1",
+      { id: 2, windowId: 1, title: "Vite", url: "https://vite.dev" },
+      1,
+      clock,
+      () => "tab-2"
+    );
+    state = saveOpenTabToStack(
+      state,
+      "space-1",
+      "stack-2",
+      { id: 3, windowId: 1, title: "TS", url: "https://www.typescriptlang.org" },
+      0,
+      clock,
+      () => "tab-3"
+    );
+    const before = state;
+
+    const next = deleteSavedTabs(state, "space-1", "stack-1", ["tab-1", "missing"], clock);
+
+    expect(next).not.toBe(before);
+    expect(before.stacks["stack-1"].tabIds).toEqual(["tab-1", "tab-2"]);
+    expect(next.stacks["stack-1"].tabIds).toEqual(["tab-2"]);
+    expect(next.tabs["tab-1"]).toBeUndefined();
+    expect(next.tabs["tab-2"]).toBeDefined();
+    expect(next.stacks["stack-2"].tabIds).toEqual(["tab-3"]);
+    expect(next.tabs["tab-3"]).toBeDefined();
+
+    expect(deleteSavedTabs(next, "space-1", "stack-1", [], clock)).toBe(next);
+    expect(deleteSavedTabs(next, "space-1", "stack-1", ["tab-3"], clock)).toBe(next);
+    expect(deleteSavedTabs(next, "space-1", "missing", ["tab-2"], clock)).toBe(next);
+    expect(deleteSavedTabs(next, "missing", "stack-1", ["tab-2"], clock)).toBe(next);
   });
 
   it("returns the active space fallback and stable generated ids", () => {

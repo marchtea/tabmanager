@@ -27,6 +27,7 @@ import {
   createIdGenerator,
   createSpace,
   createStack,
+  deleteSavedTabs,
   deleteSpace,
   deleteStack,
   emptyWorkspaceState,
@@ -52,6 +53,8 @@ type IconName =
   | "chevron-right"
   | "chevron-down"
   | "copy"
+  | "check"
+  | "check-square"
   | "edit"
   | "link"
   | "panel-right"
@@ -59,7 +62,8 @@ type IconName =
   | "refresh"
   | "search"
   | "settings"
-  | "trash";
+  | "trash"
+  | "x";
 
 const now = () => Date.now();
 
@@ -110,6 +114,8 @@ export const App = () => {
   const [isDeduplicating, setIsDeduplicating] = useState(false);
   const [dedupeStatus, setDedupeStatus] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [tabSelectionStackId, setTabSelectionStackId] = useState<string>();
+  const [selectedSavedTabIds, setSelectedSavedTabIds] = useState<ReadonlySet<string>>(() => new Set());
   const didHandleInitialUrlRef = useRef(false);
 
   const activeSpace = getActiveSpace(workspace);
@@ -221,6 +227,22 @@ export const App = () => {
     return () => window.clearTimeout(timer);
   }, [chromeApi, query]);
 
+  useEffect(() => {
+    if (!tabSelectionStackId) {
+      return;
+    }
+    const selectedStack = workspace.stacks[tabSelectionStackId];
+    if (!selectedStack || !activeSpace || selectedStack.spaceId !== activeSpace.id) {
+      setTabSelectionStackId(undefined);
+      setSelectedSavedTabIds(new Set());
+      return;
+    }
+    setSelectedSavedTabIds((currentIds) => {
+      const nextIds = new Set([...currentIds].filter((tabId) => selectedStack.tabIds.includes(tabId)));
+      return nextIds.size === currentIds.size ? currentIds : nextIds;
+    });
+  }, [activeSpace, tabSelectionStackId, workspace.stacks]);
+
   const createNewSpace = () => {
     const name = prompt("Space 名称", "新 Space");
     if (!name) {
@@ -240,8 +262,43 @@ export const App = () => {
     setWorkspace((state) => createStack(state, activeSpace.id, name, now, idGeneratorRef.current));
   };
 
+  const clearSavedTabSelection = () => {
+    setTabSelectionStackId(undefined);
+    setSelectedSavedTabIds(new Set());
+  };
+
   const setActiveSpace = (spaceId: string) => {
+    clearSavedTabSelection();
     setWorkspace((state) => ({ ...state, activeSpaceId: spaceId }));
+  };
+
+  const startSavedTabSelection = (stackId: string) => {
+    setTabSelectionStackId(stackId);
+    setSelectedSavedTabIds(new Set());
+  };
+
+  const toggleSavedTabSelection = (stackId: string, tabId: string) => {
+    if (tabSelectionStackId !== stackId) {
+      return;
+    }
+    setSelectedSavedTabIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      if (nextIds.has(tabId)) {
+        nextIds.delete(tabId);
+      } else {
+        nextIds.add(tabId);
+      }
+      return nextIds;
+    });
+  };
+
+  const removeSelectedSavedTabs = (stackId: string) => {
+    if (!activeSpace || tabSelectionStackId !== stackId || selectedSavedTabIds.size === 0) {
+      return;
+    }
+    const tabIds = [...selectedSavedTabIds];
+    setWorkspace((state) => deleteSavedTabs(state, activeSpace.id, stackId, tabIds, now));
+    clearSavedTabSelection();
   };
 
   const handleResult = async (result: SearchResult) => {
@@ -418,6 +475,9 @@ export const App = () => {
     }
     if (confirm(`删除 Stack「${name}」？`)) {
       setWorkspace((state) => deleteStack(state, activeSpace.id, stackId, now));
+      if (tabSelectionStackId === stackId) {
+        clearSavedTabSelection();
+      }
     }
   };
 
@@ -460,7 +520,11 @@ export const App = () => {
         </div>
         <nav className="space-list" aria-label="Spaces">
           {orderedSpaces.map((space) => (
-            <section className="space-group" data-testid="space-group" key={space.id}>
+            <section
+              className={`space-group ${space.id === activeSpace?.id ? "is-active" : ""}`}
+              data-testid="space-group"
+              key={space.id}
+            >
               <div
                 className={`space-row ${space.id === activeSpace?.id ? "is-active" : ""}`}
                 onDragOver={(event) => event.preventDefault()}
@@ -555,9 +619,11 @@ export const App = () => {
         )}
 
         <div className="stack-board">
-          {activeStacks.map((stack) => (
+          {activeStacks.map((stack) => {
+            const isSelectingThisStack = tabSelectionStackId === stack.id;
+            return (
             <article
-              className="stack-column"
+              className={`stack-column ${isSelectingThisStack ? "is-selecting-tabs" : ""}`}
               data-testid="stack-column"
               id={`stack-${stack.id}`}
               key={stack.id}
@@ -570,8 +636,43 @@ export const App = () => {
                 draggable
                 onDragStart={(event) => writeDragPayload(event, { type: "stack", stackId: stack.id })}
               >
-                <h3>{stack.name}</h3>
-                <div className="stack-actions">
+                <div className="stack-title">
+                  <h3>{stack.name}</h3>
+                  {isSelectingThisStack && (
+                    <p className="stack-selection-count">{selectedSavedTabIds.size} selected</p>
+                  )}
+                </div>
+                <div className={`stack-actions ${isSelectingThisStack ? "is-active" : ""}`}>
+                  {isSelectingThisStack ? (
+                    <>
+                      <button
+                        data-testid="delete-selected-tabs"
+                        disabled={selectedSavedTabIds.size === 0}
+                        type="button"
+                        title="删除选中的 Tabs"
+                        onClick={() => removeSelectedSavedTabs(stack.id)}
+                      >
+                        <Icon name="trash" />
+                      </button>
+                      <button
+                        data-testid="cancel-tab-selection"
+                        type="button"
+                        title="取消选择"
+                        onClick={clearSavedTabSelection}
+                      >
+                        <Icon name="x" />
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      data-testid="select-stack-tabs"
+                      type="button"
+                      title="选择要删除的 Tabs"
+                      onClick={() => startSavedTabSelection(stack.id)}
+                    >
+                      <Icon name="check-square" />
+                    </button>
+                  )}
                   <button
                     data-testid="rename-stack"
                     type="button"
@@ -596,20 +697,42 @@ export const App = () => {
                   if (!tab) {
                     return null;
                   }
+                  const isSelectedSavedTab = isSelectingThisStack && selectedSavedTabIds.has(tab.id);
                   return (
                     <button
-                      className="saved-tab"
+                      aria-pressed={isSelectingThisStack ? isSelectedSavedTab : undefined}
+                      className={`saved-tab ${isSelectingThisStack ? "is-select-mode" : ""} ${
+                        isSelectedSavedTab ? "is-selected" : ""
+                      }`}
                       data-testid="saved-tab"
-                      draggable
+                      draggable={!isSelectingThisStack}
                       key={tab.id}
                       type="button"
-                      onClick={() => void openUrl(tab.url)}
+                      onClick={() => {
+                        if (isSelectingThisStack) {
+                          toggleSavedTabSelection(stack.id, tab.id);
+                          return;
+                        }
+                        void openUrl(tab.url);
+                      }}
                       onDragStart={(event) => {
+                        if (isSelectingThisStack) {
+                          event.preventDefault();
+                          return;
+                        }
                         event.stopPropagation();
                         writeDragPayload(event, { type: "saved-tab", tabId: tab.id });
                       }}
                     >
-                      <span className="favicon">{tab.faviconUrl ? <img src={tab.faviconUrl} alt="" /> : <Icon name="link" />}</span>
+                      <span className="saved-tab-leading">
+                        {isSelectingThisStack ? (
+                          <span className={`saved-tab-checkbox ${isSelectedSavedTab ? "is-checked" : ""}`} aria-hidden="true">
+                            {isSelectedSavedTab && <Icon name="check" />}
+                          </span>
+                        ) : (
+                          <span className="favicon">{tab.faviconUrl ? <img src={tab.faviconUrl} alt="" /> : <Icon name="link" />}</span>
+                        )}
+                      </span>
                       <span>
                         <strong>{tab.title}</strong>
                         <small>{tab.description || tab.url}</small>
@@ -620,7 +743,7 @@ export const App = () => {
                 {stack.tabIds.length === 0 && <p className="drop-hint">从右侧拖入 Tab</p>}
               </div>
             </article>
-          ))}
+          )})}
         </div>
       </section>
 
@@ -942,6 +1065,13 @@ const Icon = ({ name }: { name: IconName }) => {
   const paths: Record<IconName, React.ReactNode> = {
     "chevron-down": <path d="m6 9 6 6 6-6" />,
     "chevron-right": <path d="m9 6 6 6-6 6" />,
+    check: <path d="m5 12 4 4 10-10" />,
+    "check-square": (
+      <>
+        <rect width="18" height="18" x="3" y="3" rx="2" />
+        <path d="m8 12 3 3 5-5" />
+      </>
+    ),
     copy: (
       <>
         <rect width="10" height="10" x="8" y="8" rx="2" />
@@ -1000,6 +1130,12 @@ const Icon = ({ name }: { name: IconName }) => {
         <path d="M19 6 18 20a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
         <path d="M10 11v6" />
         <path d="M14 11v6" />
+      </>
+    ),
+    x: (
+      <>
+        <path d="m6 6 12 12" />
+        <path d="m18 6-12 12" />
       </>
     )
   };
