@@ -40,8 +40,8 @@ jobs:
             exit 1
           fi
 
-          zip_path="release/tabmanager-extension-${TAG_NAME}.zip"
-          mv release/tabmanager-extension.zip "$zip_path"
+          zip_path="release/tabdock-extension-${TAG_NAME}.zip"
+          mv release/tabdock-extension.zip "$zip_path"
           echo "zip_path=$zip_path" >> "$GITHUB_OUTPUT"
           echo "asset_name=$(basename "$zip_path")" >> "$GITHUB_OUTPUT"
 
