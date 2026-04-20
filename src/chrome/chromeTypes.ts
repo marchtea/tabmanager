@@ -29,6 +29,13 @@ export type ChromeTabRemoveInfo = {
   isWindowClosing?: boolean;
 };
 
+export type ChromeTabChangeInfo = {
+  title?: string;
+  url?: string;
+  favIconUrl?: string;
+  status?: string;
+};
+
 export type ChromeMessageSender = {
   tab?: ChromeTabRecord;
 };
@@ -60,6 +67,10 @@ export type ChromeLike = {
     onCreated?: {
       addListener?: (listener: (tab: ChromeTabRecord) => void) => void;
       removeListener?: (listener: (tab: ChromeTabRecord) => void) => void;
+    };
+    onUpdated?: {
+      addListener?: (listener: (tabId: number, changeInfo: ChromeTabChangeInfo, tab: ChromeTabRecord) => void) => void;
+      removeListener?: (listener: (tabId: number, changeInfo: ChromeTabChangeInfo, tab: ChromeTabRecord) => void) => void;
     };
     onRemoved?: {
       addListener?: (listener: (tabId: number, removeInfo: ChromeTabRemoveInfo) => void) => void;

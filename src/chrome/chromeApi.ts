@@ -111,13 +111,16 @@ export const subscribeToOpenTabsChanges = (
   onChange: () => void
 ): (() => void) => {
   const onCreated = () => onChange();
+  const onUpdated = () => onChange();
   const onRemoved = () => onChange();
 
   chromeApi.tabs?.onCreated?.addListener?.(onCreated);
+  chromeApi.tabs?.onUpdated?.addListener?.(onUpdated);
   chromeApi.tabs?.onRemoved?.addListener?.(onRemoved);
 
   return () => {
     chromeApi.tabs?.onCreated?.removeListener?.(onCreated);
+    chromeApi.tabs?.onUpdated?.removeListener?.(onUpdated);
     chromeApi.tabs?.onRemoved?.removeListener?.(onRemoved);
   };
 };

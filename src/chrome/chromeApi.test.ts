@@ -175,10 +175,14 @@ describe("chrome api adapter", () => {
     await expect(closeOpenWindow({}, 12)).resolves.toBeUndefined();
   });
 
-  it("subscribes to open tab create and remove events and cleans up listeners", () => {
+  it("subscribes to open tab create, update, and remove events and cleans up listeners", () => {
     const chrome = {
       tabs: {
         onCreated: {
+          addListener: vi.fn(),
+          removeListener: vi.fn()
+        },
+        onUpdated: {
           addListener: vi.fn(),
           removeListener: vi.fn()
         },
@@ -192,14 +196,17 @@ describe("chrome api adapter", () => {
 
     const cleanup = subscribeToOpenTabsChanges(chrome, onChange);
     const createdListener = chrome.tabs.onCreated.addListener.mock.calls[0][0];
+    const updatedListener = chrome.tabs.onUpdated.addListener.mock.calls[0][0];
     const removedListener = chrome.tabs.onRemoved.addListener.mock.calls[0][0];
 
     createdListener({ id: 4, windowId: 12, url: "https://created.test" });
+    updatedListener(4, { url: "https://updated.test" }, { id: 4, windowId: 12, url: "https://updated.test" });
     removedListener(4, { windowId: 12, isWindowClosing: false });
     cleanup();
 
-    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenCalledTimes(3);
     expect(chrome.tabs.onCreated.removeListener).toHaveBeenCalledWith(createdListener);
+    expect(chrome.tabs.onUpdated.removeListener).toHaveBeenCalledWith(updatedListener);
     expect(chrome.tabs.onRemoved.removeListener).toHaveBeenCalledWith(removedListener);
   });
 

@@ -619,6 +619,95 @@ test.describe("Open tabs panel live updates and close actions", () => {
     await expect(page.getByTestId("open-tabs-panel")).not.toContainText("React");
   });
 
+  test("refreshes a newly opened tab after Chrome fills in its URL", async ({ page }) => {
+    await page.addInitScript(() => {
+      const tabs: Array<{ id: number; windowId: number; title?: string; url?: string }> = [
+        { id: 1, windowId: 10, title: "React", url: "https://react.dev" }
+      ];
+      const createdListeners: Array<(tab: unknown) => void> = [];
+      const updatedListeners: Array<(tabId: number, changeInfo: unknown, tab: unknown) => void> = [];
+
+      Object.assign(window, {
+        __TAB_MANAGER_TEST__: { tabs, createdListeners, updatedListeners }
+      });
+      Object.defineProperty(window, "chrome", {
+        configurable: true,
+        value: {
+          runtime: { id: "abc" },
+          storage: {
+            local: {
+              get: async () => ({}),
+              set: async () => undefined
+            }
+          },
+          tabs: {
+            query: async () => tabs.map((tab) => ({ ...tab })),
+            onCreated: {
+              addListener: (listener: (tab: unknown) => void) => createdListeners.push(listener),
+              removeListener: (listener: (tab: unknown) => void) => {
+                const index = createdListeners.indexOf(listener);
+                if (index >= 0) {
+                  createdListeners.splice(index, 1);
+                }
+              }
+            },
+            onUpdated: {
+              addListener: (listener: (tabId: number, changeInfo: unknown, tab: unknown) => void) =>
+                updatedListeners.push(listener),
+              removeListener: (listener: (tabId: number, changeInfo: unknown, tab: unknown) => void) => {
+                const index = updatedListeners.indexOf(listener);
+                if (index >= 0) {
+                  updatedListeners.splice(index, 1);
+                }
+              }
+            }
+          }
+        }
+      });
+    });
+
+    await page.goto("/");
+    await expect(page.getByTestId("tab-manager-shell")).toBeVisible();
+    await expect(page.getByTestId("open-tab")).toHaveCount(1);
+
+    await page.evaluate(() => {
+      const state = (window as unknown as {
+        __TAB_MANAGER_TEST__: {
+          tabs: Array<{ id: number; windowId: number; title?: string; url?: string }>;
+          createdListeners: Array<(tab: unknown) => void>;
+        };
+      }).__TAB_MANAGER_TEST__;
+      const pendingTab = { id: 2, windowId: 10 };
+      state.tabs.push(pendingTab);
+      for (const listener of state.createdListeners) {
+        listener(pendingTab);
+      }
+    });
+
+    await expect(page.getByTestId("open-tab")).toHaveCount(1);
+
+    await page.evaluate(() => {
+      const state = (window as unknown as {
+        __TAB_MANAGER_TEST__: {
+          tabs: Array<{ id: number; windowId: number; title?: string; url?: string }>;
+          updatedListeners: Array<(tabId: number, changeInfo: unknown, tab: unknown) => void>;
+        };
+      }).__TAB_MANAGER_TEST__;
+      const tab = state.tabs.find((item) => item.id === 2);
+      if (!tab) {
+        return;
+      }
+      tab.title = "Docs";
+      tab.url = "https://docs.test";
+      for (const listener of state.updatedListeners) {
+        listener(2, { title: "Docs", url: "https://docs.test" }, { ...tab });
+      }
+    });
+
+    await expect(page.getByTestId("open-tab")).toHaveCount(2);
+    await expect(page.getByTestId("open-tabs-panel")).toContainText("Docs");
+  });
+
   test("closes a hovered open tab without opening it", async ({ page }) => {
     await page.addInitScript(() => {
       const tabs = [
