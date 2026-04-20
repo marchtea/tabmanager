@@ -5,7 +5,7 @@ import path from "node:path";
 import { defineConfig, type Plugin } from "vite";
 
 export default defineConfig({
-  plugins: [react(), extensionBranchDescriptionPlugin()],
+  plugins: [react(), extensionManifestMetadataPlugin()],
   build: {
     outDir: "dist",
     sourcemap: true,
@@ -40,23 +40,40 @@ export default defineConfig({
 });
 
 const manifestDescriptionLimit = 132;
+const manifestNameLimit = 45;
+const extensionBaseName = "Tab Manager";
 const generatedDescriptionPrefix = "Tab Manager workspace manager.";
 
-function extensionBranchDescriptionPlugin(): Plugin {
+function extensionManifestMetadataPlugin(): Plugin {
   return {
-    name: "tabmanager-extension-branch-description",
+    name: "tabmanager-extension-manifest-metadata",
     apply: "build",
     async closeBundle() {
       const manifestPath = path.resolve("dist", "manifest.json");
       const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+        action?: {
+          default_title?: string;
+        };
         description?: string;
+        name?: string;
+        version?: string;
+        version_name?: string;
       };
+      const chromeVersion = formatChromeVersion(getNearestGitTagName(), manifest.version ?? "0.0.0");
+      const extensionName = formatExtensionName(chromeVersion);
 
       await writeFile(
         manifestPath,
         `${JSON.stringify(
           {
             ...manifest,
+            name: extensionName,
+            version: chromeVersion,
+            version_name: chromeVersion,
+            action: {
+              ...manifest.action,
+              default_title: extensionName
+            },
             description: formatExtensionDescription(getGitBranchName())
           },
           null,
@@ -65,6 +82,10 @@ function extensionBranchDescriptionPlugin(): Plugin {
       );
     }
   };
+}
+
+function getNearestGitTagName(): string {
+  return runGit(["describe", "--tags", "--abbrev=0", "HEAD"]);
 }
 
 function getGitBranchName(): string {
@@ -94,4 +115,26 @@ function formatExtensionDescription(branchName: string): string {
       : branchName;
 
   return `${generatedDescriptionPrefix}${suffixPrefix}${branch}`;
+}
+
+function formatExtensionName(chromeVersion: string): string {
+  const suffixPrefix = " ";
+  const maxVersionLength = manifestNameLimit - extensionBaseName.length - suffixPrefix.length;
+  const version =
+    chromeVersion.length > maxVersionLength
+      ? chromeVersion.slice(0, Math.max(0, maxVersionLength))
+      : chromeVersion;
+
+  return `${extensionBaseName}${suffixPrefix}${version}`;
+}
+
+function formatChromeVersion(tagName: string, fallbackVersion: string): string {
+  const candidateVersion = tagName.startsWith("v") ? tagName.slice(1) : tagName;
+  const versionParts = candidateVersion
+    .match(/\d+/g)
+    ?.slice(0, 4)
+    .map((part) => String(Math.min(Number.parseInt(part, 10), 65535)))
+    .filter(Boolean);
+
+  return versionParts?.length ? versionParts.join(".") : fallbackVersion;
 }

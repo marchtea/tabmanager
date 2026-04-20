@@ -31,6 +31,15 @@ test.describe("built Chrome extension package", () => {
     expect(manifest.description).toContain(`Branch: ${currentBranch}`);
   });
 
+  test("uses the nearest git tag as the Chrome-compatible extension version", async () => {
+    const manifest = JSON.parse(await readFile(path.join(extensionPath, "manifest.json"), "utf8"));
+    const chromeVersion = await getNearestGitTagChromeVersion();
+
+    expect(manifest.name).toBe(`Tab Manager ${chromeVersion}`);
+    expect(manifest.version).toBe(chromeVersion);
+    expect(manifest.version_name).toBe(chromeVersion);
+  });
+
   test("loads dist as a headed Chrome extension and overrides the new tab page", async () => {
     test.skip(Boolean(process.env.CI), "Chrome extension newtab override requires headed Chromium.");
 
@@ -83,4 +92,23 @@ test.describe("built Chrome extension package", () => {
 const getCurrentBranchName = async (): Promise<string> => {
   const { stdout } = await execFileAsync("git", ["branch", "--show-current"], { cwd: process.cwd() });
   return stdout.trim();
+};
+
+const getNearestGitTagChromeVersion = async (): Promise<string> => {
+  const { stdout } = await execFileAsync("git", ["describe", "--tags", "--abbrev=0", "HEAD"], {
+    cwd: process.cwd()
+  });
+
+  return formatChromeVersion(stdout.trim());
+};
+
+const formatChromeVersion = (tag: string): string => {
+  const normalizedTag = tag.startsWith("v") ? tag.slice(1) : tag;
+  const versionParts = normalizedTag
+    .match(/\d+/g)
+    ?.slice(0, 4)
+    .map((part) => String(Math.min(Number.parseInt(part, 10), 65535)))
+    .filter(Boolean);
+
+  return versionParts?.length ? versionParts.join(".") : "0.0.0";
 };
