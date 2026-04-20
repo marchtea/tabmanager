@@ -117,6 +117,7 @@ export const App = () => {
   const [tabSelectionStackId, setTabSelectionStackId] = useState<string>();
   const [selectedSavedTabIds, setSelectedSavedTabIds] = useState<ReadonlySet<string>>(() => new Set());
   const didHandleInitialUrlRef = useRef(false);
+  const scrollbarRevealTimersRef = useRef(new Map<HTMLElement, number>());
 
   const activeSpace = getActiveSpace(workspace);
   const activeStacks = activeSpace?.stackIds.map((id) => workspace.stacks[id]).filter(Boolean) ?? [];
@@ -131,6 +132,23 @@ export const App = () => {
     [historyEntries, openBlocks, query, workspace]
   );
   const flatResults = flattenSearchGroups(searchGroups);
+
+  const revealTransientScrollbar = useCallback((event: React.UIEvent<HTMLElement>) => {
+    const scrollContainer = event.currentTarget;
+    scrollContainer.classList.add("is-scrolling");
+
+    const timers = scrollbarRevealTimersRef.current;
+    const existingTimer = timers.get(scrollContainer);
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+    }
+
+    const nextTimer = window.setTimeout(() => {
+      scrollContainer.classList.remove("is-scrolling");
+      timers.delete(scrollContainer);
+    }, 760);
+    timers.set(scrollContainer, nextTimer);
+  }, []);
 
   const refreshOpenTabs = useCallback(async () => {
     if (!chromeApi) {
@@ -242,6 +260,16 @@ export const App = () => {
       return nextIds.size === currentIds.size ? currentIds : nextIds;
     });
   }, [activeSpace, tabSelectionStackId, workspace.stacks]);
+
+  useEffect(() => {
+    const scrollbarRevealTimers = scrollbarRevealTimersRef.current;
+    return () => {
+      for (const timer of scrollbarRevealTimers.values()) {
+        window.clearTimeout(timer);
+      }
+      scrollbarRevealTimers.clear();
+    };
+  }, []);
 
   const createNewSpace = () => {
     const name = prompt("Space 名称", "新 Space");
@@ -518,6 +546,9 @@ export const App = () => {
             <span>设置</span>
           </button>
         </div>
+        <div className="space-section-label" data-testid="space-section-label">
+          Spaces
+        </div>
         <nav className="space-list" aria-label="Spaces">
           {orderedSpaces.map((space) => (
             <section
@@ -618,7 +649,7 @@ export const App = () => {
           </div>
         )}
 
-        <div className="stack-board">
+        <div className="stack-board" onScroll={revealTransientScrollbar}>
           {activeStacks.map((stack) => {
             const isSelectingThisStack = tabSelectionStackId === stack.id;
             return (
@@ -691,7 +722,7 @@ export const App = () => {
                   </button>
                 </div>
               </header>
-              <div className="tab-list">
+              <div className="tab-list" onScroll={revealTransientScrollbar}>
                 {stack.tabIds.map((tabId) => {
                   const tab = workspace.tabs[tabId];
                   if (!tab) {

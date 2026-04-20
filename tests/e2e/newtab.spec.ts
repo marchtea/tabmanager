@@ -10,6 +10,25 @@ test.describe("Tab Manager newtab MVP", () => {
     await expect(page.getByTestId("sidebar")).toContainText("Tab Manager");
     await expect(page.getByTestId("workspace")).toContainText("创建第一个 Space");
     await expect(page.getByTestId("open-tabs-panel")).toContainText("React");
+    await expect(page.getByTestId("space-section-label")).toHaveText("Spaces");
+
+    await expect.poll(async () =>
+      page.getByTestId("sidebar").evaluate((element) => {
+        const controls = element.querySelector(".sidebar-controls");
+        const settings = element.querySelector("[data-testid='settings-entry']");
+        const label = element.querySelector("[data-testid='space-section-label']");
+
+        return {
+          controlsDivider: controls ? window.getComputedStyle(controls).borderBottomWidth : "",
+          settingsMinHeight: settings ? window.getComputedStyle(settings).minHeight : "",
+          labelSize: label ? window.getComputedStyle(label).fontSize : ""
+        };
+      })
+    ).toEqual({
+      controlsDivider: "1px",
+      settingsMinHeight: "42px",
+      labelSize: "12px"
+    });
 
     await page.getByTestId("search-entry").click();
     await expect(page.getByTestId("search-modal")).toBeVisible();
@@ -207,6 +226,37 @@ test.describe("Tab Manager newtab MVP", () => {
       treeBorderTopStyle: "solid",
       treePaddingLeft: "20px"
     });
+
+    await expect.poll(async () =>
+      page.getByTestId("workspace").evaluate((element) => {
+        const heading = element.querySelector(".workspace-header h2");
+        const summary = element.querySelector(".workspace-summary span");
+        const stackHeading = element.querySelector(".stack-header h3");
+        const addStack = element.querySelector("[data-testid='add-stack']");
+        const summaryRect = summary?.getBoundingClientRect();
+        const addStackRect = addStack?.getBoundingClientRect();
+
+        return {
+          workspaceTitleSize: heading ? window.getComputedStyle(heading).fontSize : "",
+          summarySize: summary ? window.getComputedStyle(summary).fontSize : "",
+          stackTitleSize: stackHeading ? window.getComputedStyle(stackHeading).fontSize : "",
+          rightControlBottomDelta:
+            summaryRect && addStackRect ? Math.abs(summaryRect.bottom - addStackRect.bottom) : null,
+          rightControlCenterDelta:
+            summaryRect && addStackRect
+              ? Math.abs(
+                  summaryRect.top + summaryRect.height / 2 - (addStackRect.top + addStackRect.height / 2)
+                )
+              : null
+        };
+      })
+    ).toEqual({
+      workspaceTitleSize: "28px",
+      summarySize: "14px",
+      stackTitleSize: "20px",
+      rightControlBottomDelta: 0,
+      rightControlCenterDelta: 1
+    });
   });
 
   test("selects a stack search result with Enter", async ({ page }) => {
@@ -305,6 +355,7 @@ test.describe("Tab Manager newtab MVP", () => {
   test("keeps short stacks content-sized while long stacks scroll internally", async ({ page }) => {
     await page.addInitScript(() => {
       const tabIds = Array.from({ length: 12 }, (_, index) => `tab-${index}`);
+      const overflowStackIds = Array.from({ length: 5 }, (_, index) => `stack-extra-${index}`);
       const now = Date.UTC(2026, 3, 20);
       Object.defineProperty(window, "chrome", {
         configurable: true,
@@ -320,7 +371,7 @@ test.describe("Tab Manager newtab MVP", () => {
                     "space-1": {
                       id: "space-1",
                       name: "Height Research",
-                      stackIds: ["stack-short", "stack-long"],
+                      stackIds: ["stack-short", "stack-long", ...overflowStackIds],
                       createdAt: now,
                       updatedAt: now
                     }
@@ -341,7 +392,20 @@ test.describe("Tab Manager newtab MVP", () => {
                       tabIds,
                       createdAt: now,
                       updatedAt: now
-                    }
+                    },
+                    ...Object.fromEntries(
+                      overflowStackIds.map((id, index) => [
+                        id,
+                        {
+                          id,
+                          spaceId: "space-1",
+                          name: `Extra ${index}`,
+                          tabIds: [],
+                          createdAt: now,
+                          updatedAt: now
+                        }
+                      ])
+                    )
                   },
                   tabs: Object.fromEntries(
                     tabIds.map((id, index) => [
@@ -372,17 +436,36 @@ test.describe("Tab Manager newtab MVP", () => {
 
     const shortStack = stackByName(page, "Short");
     const longStack = stackByName(page, "Long");
+    const stackBoard = page.locator(".stack-board");
+    const longTabList = longStack.locator(".tab-list");
     const boardHeight = await page.getByTestId("workspace").evaluate((element) => element.getBoundingClientRect().height);
 
     await expect.poll(async () => shortStack.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThan(boardHeight / 2);
 
     await expect.poll(async () =>
-      longStack.locator(".tab-list").evaluate((element) => ({
+      longTabList.evaluate((element) => ({
         clientHeight: element.clientHeight,
         scrollHeight: element.scrollHeight,
         overflowY: window.getComputedStyle(element).overflowY
       }))
     ).toMatchObject({ overflowY: "auto" });
+
+    await expect(longTabList).not.toHaveClass(/is-scrolling/);
+    await longTabList.evaluate((element) => {
+      element.scrollTop = 120;
+      element.dispatchEvent(new Event("scroll"));
+    });
+    await expect(longTabList).toHaveClass(/is-scrolling/);
+    await expect(longTabList).not.toHaveClass(/is-scrolling/, { timeout: 2000 });
+
+    await expect.poll(async () => stackBoard.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+    await expect(stackBoard).not.toHaveClass(/is-scrolling/);
+    await stackBoard.evaluate((element) => {
+      element.scrollLeft = 160;
+      element.dispatchEvent(new Event("scroll"));
+    });
+    await expect(stackBoard).toHaveClass(/is-scrolling/);
+    await expect(stackBoard).not.toHaveClass(/is-scrolling/, { timeout: 2000 });
   });
 
   test("global search overlay keeps typing events inside the overlay", async ({ page }) => {
