@@ -1,6 +1,6 @@
 import { normalizeUrl } from "../domain/workspaceStore";
 import { buildSearchGroups } from "../domain/search";
-import { defaultSettings, normalizeSettings } from "../domain/settings";
+import { DEFAULT_GLOBAL_SEARCH_SHORTCUT, defaultSettings, normalizeSettings, normalizeShortcut } from "../domain/settings";
 import type { HistoryEntry, OpenTab, OpenTabBlock, SearchGroups, SearchResult, TabManagerSettings, WorkspaceState } from "../domain/types";
 import { emptyWorkspaceState, normalizeWorkspaceState } from "../domain/workspaceStore";
 import { createLocalState, isWorkspaceState, normalizeLocalState, type TabDockLocalStateV1 } from "../domain/persistence";
@@ -23,10 +23,30 @@ export const getChrome = (): ChromeLike | undefined => {
 };
 
 export const isTabManagerUrl = (url: string | undefined, extensionId?: string): boolean => {
-  if (!url || !extensionId) {
+  if (!url) {
+    return false;
+  }
+  if (url === "chrome://newtab/" || url === "chrome://newtab") {
+    return true;
+  }
+  if (!extensionId) {
     return false;
   }
   return url.startsWith(`chrome-extension://${extensionId}/`) && url.includes("index.html");
+};
+
+export const buildTabManagerUrl = (
+  chromeApi: ChromeLike,
+  query: Record<string, string | undefined> = {}
+): string => {
+  const extensionUrl = chromeApi.runtime?.getURL?.("index.html") ?? "index.html";
+  const url = new URL(extensionUrl);
+  for (const [key, value] of Object.entries(query)) {
+    if (value) {
+      url.searchParams.set(key, value);
+    }
+  }
+  return url.toString();
 };
 
 export const groupOpenTabs = async (chromeApi: ChromeLike): Promise<OpenTabBlock[]> => {
@@ -71,13 +91,7 @@ export const focusOrOpenTabManager = async (
   chromeApi: ChromeLike,
   query: Record<string, string | undefined> = {}
 ): Promise<void> => {
-  const extensionUrl = chromeApi.runtime?.getURL?.("index.html") ?? "index.html";
-  const url = new URL(extensionUrl);
-  for (const [key, value] of Object.entries(query)) {
-    if (value) {
-      url.searchParams.set(key, value);
-    }
-  }
+  const url = buildTabManagerUrl(chromeApi, query);
 
   const openTabs = await listOpenTabRecords(chromeApi);
   const existing = openTabs.find((tab) => isTabManagerUrl(tab.url, chromeApi.runtime?.id));
@@ -85,11 +99,11 @@ export const focusOrOpenTabManager = async (
     if (existing.windowId) {
       await chromeApi.windows?.update?.(existing.windowId, { focused: true });
     }
-    await chromeApi.tabs?.update?.(existing.id, { active: true, url: url.toString() });
+    await chromeApi.tabs?.update?.(existing.id, { active: true, url });
     return;
   }
 
-  await chromeApi.tabs?.create?.({ url: url.toString() });
+  await chromeApi.tabs?.create?.({ url });
 };
 
 export const moveOpenTabToWindow = async (
@@ -128,29 +142,54 @@ export const subscribeToOpenTabsChanges = (
 };
 
 export const closeDuplicateOpenTabs = async (chromeApi: ChromeLike): Promise<number> => {
+  const protectedTabId = await getActiveTabId(chromeApi);
   const tabs = await listOpenTabRecords(chromeApi);
   const extensionId = chromeApi.runtime?.id;
-  const seenUrls = new Set<string>();
-  const duplicateTabIds = tabs.flatMap((tab) => {
-    if (!tab.id || !tab.url || isTabManagerUrl(tab.url, extensionId)) {
-      return [];
+  const seenTabsByUrl = new Map<string, ChromeTabRecord>();
+  const duplicateTabIds = new Set<number>();
+
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url) {
+      continue;
     }
 
-    const normalizedUrl = normalizeUrl(tab.url);
-    if (seenUrls.has(normalizedUrl)) {
-      return [tab.id];
+    const normalizedUrl = getDuplicateTabKey(tab.url, extensionId);
+    const seenTab = seenTabsByUrl.get(normalizedUrl);
+    if (!seenTab) {
+      seenTabsByUrl.set(normalizedUrl, tab);
+      continue;
     }
 
-    seenUrls.add(normalizedUrl);
-    return [];
-  });
+    if (tab.id === protectedTabId) {
+      if (seenTab.id && seenTab.id !== protectedTabId) {
+        duplicateTabIds.add(seenTab.id);
+      }
+      seenTabsByUrl.set(normalizedUrl, tab);
+      continue;
+    }
 
-  if (duplicateTabIds.length === 0 || !chromeApi.tabs?.remove) {
+    duplicateTabIds.add(tab.id);
+  }
+
+  const idsToClose = [...duplicateTabIds];
+  if (idsToClose.length === 0 || !chromeApi.tabs?.remove) {
     return 0;
   }
 
-  await chromeApi.tabs.remove(duplicateTabIds);
-  return duplicateTabIds.length;
+  await chromeApi.tabs.remove(idsToClose);
+  return idsToClose.length;
+};
+
+const getActiveTabId = async (chromeApi: ChromeLike): Promise<number | undefined> => {
+  const [activeTab] = await chromeApi.tabs?.query?.({ active: true, currentWindow: true }) ?? [];
+  return activeTab?.id;
+};
+
+const getDuplicateTabKey = (url: string, extensionId?: string): string => {
+  if (isTabManagerUrl(url, extensionId)) {
+    return `tabdock:${extensionId ?? "newtab"}`;
+  }
+  return normalizeUrl(url);
 };
 
 const listOpenTabRecords = async (chromeApi: ChromeLike): Promise<ChromeTabRecord[]> => {
@@ -287,7 +326,17 @@ export const saveLocalState = async (
 
 export const getGlobalSearchShortcut = async (chromeApi: ChromeLike | undefined): Promise<string> => {
   const commands = await chromeApi?.commands?.getAll?.() ?? [];
-  return commands.find((command) => command.name === GLOBAL_SEARCH_COMMAND)?.shortcut || "Command+Shift+K";
+  const command = commands.find((item) => item.name === GLOBAL_SEARCH_COMMAND);
+  if (!command) {
+    return DEFAULT_GLOBAL_SEARCH_SHORTCUT;
+  }
+
+  const shortcut = command.shortcut?.trim() ?? "";
+  if (!shortcut) {
+    return "";
+  }
+
+  return normalizeShortcut(shortcut) ?? shortcut;
 };
 
 const mapChromeTab = (tab: ChromeTabRecord): OpenTab | undefined => {

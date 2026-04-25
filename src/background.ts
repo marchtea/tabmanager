@@ -1,8 +1,10 @@
 import {
   buildGlobalSearchGroups,
+  buildTabManagerUrl,
   focusOrOpenTabManager,
   getChrome,
-  handleGlobalSearchResult
+  handleGlobalSearchResult,
+  isTabManagerUrl
 } from "./chrome/chromeApi";
 import { isGlobalSearchMessage } from "./chrome/globalSearchMessages";
 import type { GlobalSearchMessage } from "./chrome/globalSearchMessages";
@@ -38,6 +40,11 @@ const openGlobalSearch = async (api: ChromeLike): Promise<void> => {
   const [activeTab] = await api.tabs?.query?.({ active: true, currentWindow: true }) ?? [];
   if (!activeTab?.id) {
     await focusOrOpenTabManager(api, { search: "1" });
+    return;
+  }
+
+  if (isTabManagerUrl(activeTab.url, api.runtime?.id)) {
+    await api.tabs?.update?.(activeTab.id, { active: true, url: buildTabManagerUrl(api, { search: "1" }) });
     return;
   }
 

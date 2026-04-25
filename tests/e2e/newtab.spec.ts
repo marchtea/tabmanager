@@ -46,6 +46,11 @@ test.describe("TabDock newtab MVP", () => {
       "font-size",
       "18px"
     );
+    await expect
+      .poll(async () =>
+        page.getByRole("textbox", { name: "搜索 spaces、stacks、tabs、history" }).evaluate((element) => element.getBoundingClientRect().height)
+      )
+      .toBeGreaterThanOrEqual(56);
   });
 
   test("collapses and expands an open window block from its title", async ({ page }) => {
@@ -344,19 +349,21 @@ test.describe("TabDock newtab MVP", () => {
     await expect(panel).not.toHaveClass(/is-collapsed/);
   });
 
-  test("shows settings with app and global shortcuts", async ({ page }) => {
+  test("shows settings with a single search shortcut", async ({ page }) => {
     await page.getByTestId("settings-entry").click();
 
     await expect(page.getByTestId("settings-modal")).toBeVisible();
-    await expect(page.getByTestId("app-search-shortcut")).toHaveValue(/K/);
-    await expect(page.getByLabel("全局搜索快捷键", { exact: true })).toHaveValue(/K/);
+    await expect(page.getByTestId("search-shortcut")).toHaveValue(/K/);
+    await expect(page.getByLabel("全局搜索快捷键", { exact: true })).toHaveCount(0);
     await expect(page.getByTestId("export-data")).toBeVisible();
     await expect(page.getByTestId("import-data")).toBeVisible();
     await expect(page.getByTestId("authorize-backup-directory")).toBeVisible();
     await expect(page.getByText(/本地备份/)).toBeVisible();
+  });
 
-    await page.getByTestId("app-search-shortcut").press(process.platform === "darwin" ? "Meta+Shift+J" : "Control+Shift+J");
-    await expect(page.getByTestId("app-search-shortcut")).toHaveValue(/J/);
+  test("opens search with the global Chrome shortcut inside the app", async ({ page }) => {
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+Shift+K" : "Control+Shift+K");
+    await expect(page.getByTestId("search-modal")).toBeVisible();
   });
 
   test("exports a JSON backup from settings", async ({ page }) => {
@@ -396,6 +403,33 @@ test.describe("TabDock newtab MVP", () => {
       await expect(spaceByName(page, "Imported Space")).toBeVisible();
       await expect(stackByName(page, "Imported Stack")).toBeVisible();
       await expect(page.getByText("Old Space")).toHaveCount(0);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps the search input full height when many results are shown", async ({ page }) => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "tabdock-many-results-"));
+    const importPath = path.join(tempDir, "tabdock-many-results.json");
+    await writeFile(importPath, JSON.stringify(createImportFixture("城市 Space", "城市 Stack", 24), null, 2));
+
+    try {
+      await page.getByTestId("settings-entry").click();
+      const fileChooserPromise = page.waitForEvent("filechooser");
+      await page.getByTestId("import-data").click();
+      const fileChooser = await fileChooserPromise;
+      await confirmNextDialog(page, true);
+      await fileChooser.setFiles(importPath);
+      await expect(stackByName(page, "城市 Stack")).toBeVisible();
+      await page.getByTestId("settings-modal").getByTitle("关闭").click();
+
+      await page.getByTestId("search-entry").click();
+      const searchInput = page.getByRole("textbox", { name: "搜索 spaces、stacks、tabs、history" });
+      await searchInput.fill("城市");
+      await expect(page.getByTestId("search-result")).toHaveCount(26);
+      await expect
+        .poll(async () => searchInput.evaluate((element) => element.getBoundingClientRect().height))
+        .toBeGreaterThanOrEqual(56);
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
@@ -717,6 +751,65 @@ test.describe("Open tabs panel duplicate cleanup", () => {
     await expect(page.getByTestId("open-tabs-panel")).toContainText("Vite");
     await expect(page.getByTestId("open-tabs-panel")).not.toContainText("React Duplicate");
     await expect(page.getByTestId("open-tabs-panel")).not.toContainText("Vite Duplicate");
+  });
+
+  test("keeps the active TabDock tab when duplicate cleanup includes TabDock duplicates", async ({ page }) => {
+    await page.addInitScript(() => {
+      const tabs = [
+        { id: 1, windowId: 10, title: "Old TabDock", url: "chrome-extension://abc/index.html" },
+        { id: 2, windowId: 10, title: "Current TabDock", url: "chrome-extension://abc/index.html?search=1", active: true },
+        { id: 3, windowId: 20, title: "React", url: "https://react.dev/" },
+        { id: 4, windowId: 20, title: "React Duplicate", url: "https://react.dev/#docs" }
+      ];
+      Object.assign(window, { __tabdockRemovedIds: [] as number[] });
+
+      Object.defineProperty(window, "chrome", {
+        configurable: true,
+        value: {
+          runtime: { id: "abc" },
+          storage: {
+            local: {
+              get: async () => ({}),
+              set: async () => undefined
+            }
+          },
+          tabs: {
+            query: async (queryInfo: Record<string, unknown>) => {
+              if (queryInfo.active) {
+                return tabs.filter((tab) => tab.active).map((tab) => ({ ...tab }));
+              }
+              return tabs.map((tab) => ({ ...tab }));
+            },
+            remove: async (tabIds: number | number[]) => {
+              const ids = Array.isArray(tabIds) ? tabIds : [tabIds];
+              (window as typeof window & { __tabdockRemovedIds: number[] }).__tabdockRemovedIds.push(...ids);
+              for (const id of ids) {
+                const index = tabs.findIndex((tab) => tab.id === id);
+                if (index >= 0) {
+                  tabs.splice(index, 1);
+                }
+              }
+            }
+          },
+          windows: {
+            getAll: async () => [
+              { id: 10, tabs: tabs.filter((tab) => tab.windowId === 10).map((tab) => ({ ...tab })) },
+              { id: 20, tabs: tabs.filter((tab) => tab.windowId === 20).map((tab) => ({ ...tab })) }
+            ]
+          }
+        }
+      });
+    });
+
+    await page.goto("/");
+    await expect(page.getByTestId("tab-manager-shell")).toBeVisible();
+
+    await page.getByTestId("dedupe-open-tabs").click();
+
+    await expect(page.getByTestId("dedupe-open-tabs-status")).toHaveText("已关闭 2 个重复 Tab");
+    await expect
+      .poll(async () => page.evaluate(() => (window as typeof window & { __tabdockRemovedIds: number[] }).__tabdockRemovedIds))
+      .toEqual([1, 4]);
   });
 });
 
@@ -1130,8 +1223,9 @@ const expectSpaceOrder = async (page: import("@playwright/test").Page, names: st
   }).toEqual(names);
 };
 
-const createImportFixture = (spaceName: string, stackName: string) => {
+const createImportFixture = (spaceName: string, stackName: string, tabCount = 1) => {
   const now = Date.UTC(2026, 3, 23);
+  const tabIds = Array.from({ length: tabCount }, (_, index) => `imported-tab-${index + 1}`);
   return {
     format: "tabdock.local-state",
     schemaVersion: 1,
@@ -1153,23 +1247,26 @@ const createImportFixture = (spaceName: string, stackName: string) => {
           id: "imported-stack",
           spaceId: "imported-space",
           name: stackName,
-          tabIds: ["imported-tab"],
+          tabIds,
           createdAt: now,
           updatedAt: now
         }
       },
-      tabs: {
-        "imported-tab": {
-          id: "imported-tab",
-          spaceId: "imported-space",
-          stackId: "imported-stack",
-          title: "Imported URL",
-          url: "https://imported.test",
-          source: "manual",
-          createdAt: now,
-          updatedAt: now
-        }
-      }
+      tabs: Object.fromEntries(
+        tabIds.map((tabId, index) => [
+          tabId,
+          {
+            id: tabId,
+            spaceId: "imported-space",
+            stackId: "imported-stack",
+            title: tabCount === 1 ? "Imported URL" : `城市大富翁 (${index + 1}) _哔哩哔哩_bilibili`,
+            url: tabCount === 1 ? "https://imported.test" : `https://www.bilibili.com/video/city-${index + 1}`,
+            source: "manual",
+            createdAt: now,
+            updatedAt: now
+          }
+        ])
+      )
     },
     settings: {
       appSearchShortcut: "Ctrl+K"

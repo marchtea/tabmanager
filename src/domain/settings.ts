@@ -1,7 +1,7 @@
 import type { TabManagerSettings } from "./types";
 
 export const DEFAULT_APP_SEARCH_SHORTCUT = "Mod+K";
-export const DEFAULT_GLOBAL_SEARCH_SHORTCUT = "Command+Shift+K";
+export const DEFAULT_GLOBAL_SEARCH_SHORTCUT = "Mod+Shift+K";
 
 export const defaultSettings = (): TabManagerSettings => ({
   appSearchShortcut: DEFAULT_APP_SEARCH_SHORTCUT
@@ -69,7 +69,16 @@ export const shortcutFromEvent = (event: KeyboardEvent): string | undefined => {
 };
 
 export const formatShortcutForPlatform = (shortcut: string, isMac: boolean): string => {
-  const normalized = normalizeShortcut(shortcut) ?? DEFAULT_APP_SEARCH_SHORTCUT;
+  const trimmed = shortcut.trim();
+  if (!trimmed) {
+    return "未设置";
+  }
+
+  const normalized = normalizeShortcut(trimmed);
+  if (!normalized) {
+    return trimmed;
+  }
+
   const displayParts = normalized.split("+").map((part) => {
     if (part === "Mod") {
       return isMac ? "⌘" : "Ctrl";

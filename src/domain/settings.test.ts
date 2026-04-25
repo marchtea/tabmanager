@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_APP_SEARCH_SHORTCUT,
+  DEFAULT_GLOBAL_SEARCH_SHORTCUT,
   defaultSettings,
   formatShortcutForPlatform,
   normalizeSettings,
@@ -28,10 +29,14 @@ describe("settings", () => {
   });
 
   it("formats shortcuts for display", () => {
+    expect(formatShortcutForPlatform("", true)).toBe("未设置");
     expect(formatShortcutForPlatform("Mod+K", true)).toBe("⌘K");
     expect(formatShortcutForPlatform("Mod+K", false)).toBe("Ctrl+K");
+    expect(formatShortcutForPlatform(DEFAULT_GLOBAL_SEARCH_SHORTCUT, true)).toBe("⌘⇧K");
+    expect(formatShortcutForPlatform(DEFAULT_GLOBAL_SEARCH_SHORTCUT, false)).toBe("Ctrl+Shift+K");
     expect(formatShortcutForPlatform("Command+Shift+K", true)).toBe("⌘⇧K");
     expect(formatShortcutForPlatform("Command+Shift+K", false)).toBe("Ctrl+Shift+K");
+    expect(formatShortcutForPlatform("Ctrl+Shift+Space", false)).toBe("Ctrl+Shift+Space");
   });
 
   it("captures keyboard events as shortcuts", () => {

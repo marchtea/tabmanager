@@ -30,7 +30,6 @@ import { buildSearchGroups } from "./domain/search";
 import {
   DEFAULT_GLOBAL_SEARCH_SHORTCUT,
   formatShortcutForPlatform,
-  shortcutFromEvent,
   shortcutMatchesEvent
 } from "./domain/settings";
 import type { HistoryEntry, OpenTab, OpenTabBlock, SearchGroups, SearchResult, TabManagerSettings } from "./domain/types";
@@ -140,8 +139,7 @@ export const App = () => {
   const orderedSpaces = getOrderedSpaces(workspace);
   const openTabCount = openBlocks.reduce((total, block) => total + block.tabs.length, 0);
   const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
-  const appSearchShortcutLabel = formatShortcutForPlatform(settings.appSearchShortcut, isMac);
-  const globalSearchShortcutLabel = formatShortcutForPlatform(globalSearchShortcut, isMac);
+  const searchShortcutLabel = formatShortcutForPlatform(globalSearchShortcut, isMac);
   const searchGroups = useMemo(
     () => buildSearchGroups(query, workspace, openBlocks, historyEntries, now()),
     [historyEntries, openBlocks, query, workspace]
@@ -164,6 +162,12 @@ export const App = () => {
     }, 760);
     timers.set(scrollContainer, nextTimer);
   }, []);
+
+  const refreshGlobalSearchShortcut = useCallback(async () => {
+    const shortcut = await getGlobalSearchShortcut(chromeApi)
+      .catch(() => DEFAULT_GLOBAL_SEARCH_SHORTCUT);
+    setGlobalSearchShortcut(shortcut);
+  }, [chromeApi]);
 
   const refreshOpenTabs = useCallback(async () => {
     if (!chromeApi) {
@@ -189,6 +193,33 @@ export const App = () => {
     };
     void load();
   }, [chromeApi]);
+
+  useEffect(() => {
+    if (!loaded) {
+      return;
+    }
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshGlobalSearchShortcut();
+      }
+    };
+    const refresh = () => void refreshGlobalSearchShortcut();
+
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [loaded, refreshGlobalSearchShortcut]);
+
+  useEffect(() => {
+    if (!loaded || !isSettingsOpen) {
+      return;
+    }
+    void refreshGlobalSearchShortcut();
+  }, [isSettingsOpen, loaded, refreshGlobalSearchShortcut]);
 
   useEffect(() => {
     void refreshOpenTabs();
@@ -234,7 +265,7 @@ export const App = () => {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (shortcutMatchesEvent(settings.appSearchShortcut, event)) {
+      if (shortcutMatchesEvent(globalSearchShortcut, event)) {
         event.preventDefault();
         setIsSearchOpen(true);
       }
@@ -244,7 +275,7 @@ export const App = () => {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [settings.appSearchShortcut]);
+  }, [globalSearchShortcut]);
 
   useEffect(() => {
     if (!loaded || didHandleInitialUrlRef.current) {
@@ -642,7 +673,7 @@ export const App = () => {
         <div className="brand-row">
           <div className="brand-lockup">
             <span className="brand-mark" aria-hidden="true">
-              TM
+              <img src="/favicon.png" alt="" />
             </span>
             <h1>TabDock</h1>
           </div>
@@ -654,7 +685,7 @@ export const App = () => {
           <button className="search-entry" data-testid="search-entry" type="button" onClick={() => setIsSearchOpen(true)}>
             <Icon name="search" />
             <span>搜索</span>
-            <kbd>{appSearchShortcutLabel}</kbd>
+            <kbd>{searchShortcutLabel}</kbd>
           </button>
           <button className="settings-entry" data-testid="settings-entry" type="button" onClick={() => setIsSettingsOpen(true)}>
             <Icon name="settings" />
@@ -1051,11 +1082,9 @@ export const App = () => {
       )}
       {isSettingsOpen && (
         <SettingsModal
-          appSearchShortcut={settings.appSearchShortcut}
-          appSearchShortcutLabel={appSearchShortcutLabel}
           backupStatus={backupStatus}
           dataStatus={dataStatus}
-          globalSearchShortcutLabel={globalSearchShortcutLabel}
+          searchShortcutLabel={searchShortcutLabel}
           importInputRef={importInputRef}
           onAuthorizeBackupDirectory={() => void handleAuthorizeBackupDirectory()}
           onClose={() => setIsSettingsOpen(false)}
@@ -1064,9 +1093,6 @@ export const App = () => {
           onImportFile={(file) => void handleImportFile(file)}
           onOpenChromeShortcuts={() => void openUrl("chrome://extensions/shortcuts")}
           onRestoreLatestBackup={() => void handleRestoreLatestBackup()}
-          onSetAppSearchShortcut={(shortcut) =>
-            setSettings((currentSettings) => ({ ...currentSettings, appSearchShortcut: shortcut }))
-          }
         />
       )}
     </main>
@@ -1074,11 +1100,9 @@ export const App = () => {
 };
 
 const SettingsModal = ({
-  appSearchShortcut,
-  appSearchShortcutLabel,
   backupStatus,
   dataStatus,
-  globalSearchShortcutLabel,
+  searchShortcutLabel,
   importInputRef,
   onAuthorizeBackupDirectory,
   onClose,
@@ -1086,14 +1110,11 @@ const SettingsModal = ({
   onImportButtonClick,
   onImportFile,
   onOpenChromeShortcuts,
-  onRestoreLatestBackup,
-  onSetAppSearchShortcut
+  onRestoreLatestBackup
 }: {
-  appSearchShortcut: string;
-  appSearchShortcutLabel: string;
   backupStatus: BackupDirectoryStatus;
   dataStatus: string;
-  globalSearchShortcutLabel: string;
+  searchShortcutLabel: string;
   importInputRef: React.RefObject<HTMLInputElement | null>;
   onAuthorizeBackupDirectory: () => void;
   onClose: () => void;
@@ -1102,7 +1123,6 @@ const SettingsModal = ({
   onImportFile: (file: File | undefined) => void;
   onOpenChromeShortcuts: () => void;
   onRestoreLatestBackup: () => void;
-  onSetAppSearchShortcut: (shortcut: string) => void;
 }) => (
   <div className="search-backdrop" onMouseDown={onClose}>
     <section className="settings-modal" data-testid="settings-modal" onMouseDown={(event) => event.stopPropagation()}>
@@ -1119,26 +1139,15 @@ const SettingsModal = ({
         <span>搜索快捷键</span>
         <input
           aria-label="搜索快捷键"
-          data-testid="app-search-shortcut"
+          data-testid="search-shortcut"
           readOnly
-          value={appSearchShortcutLabel}
-          onKeyDown={(event) => {
-            event.preventDefault();
-            const shortcut = shortcutFromEvent(event.nativeEvent);
-            if (shortcut) {
-              onSetAppSearchShortcut(shortcut);
-            }
-          }}
+          value={searchShortcutLabel}
         />
       </label>
-      <label className="shortcut-field">
-        <span>全局搜索快捷键</span>
-        <input aria-label="全局搜索快捷键" readOnly value={globalSearchShortcutLabel} />
-      </label>
       <button className="settings-link-button" type="button" onClick={onOpenChromeShortcuts}>
-        在 Chrome 中修改全局快捷键
+        在 Chrome 中修改快捷键
       </button>
-      <p className="settings-note">当前应用内快捷键：{appSearchShortcut}</p>
+      <p className="settings-note">此快捷键同时用于应用内搜索和全局搜索。</p>
       <div className="settings-section">
         <h3>数据</h3>
         <div className="settings-actions">

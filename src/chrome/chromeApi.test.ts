@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildTabManagerUrl,
   closeDuplicateOpenTabs,
   closeOpenTab,
   closeOpenWindow,
@@ -112,6 +113,32 @@ describe("chrome api adapter", () => {
     expect(chrome.tabs.update).toHaveBeenCalledWith(4, {
       active: true,
       url: "chrome-extension://abc/index.html?search=1&stack=stack-1"
+    });
+    expect(chrome.tabs.create).not.toHaveBeenCalled();
+  });
+
+  it("reuses Chrome newtab override tabs as TabDock tabs", async () => {
+    const chrome = {
+      runtime: {
+        id: "abc",
+        getURL: vi.fn((path: string) => `chrome-extension://abc/${path}`)
+      },
+      tabs: {
+        query: vi.fn().mockResolvedValue([{ id: 9, windowId: 44, url: "chrome://newtab/" }]),
+        update: vi.fn().mockResolvedValue({}),
+        create: vi.fn().mockResolvedValue({})
+      },
+      windows: {
+        update: vi.fn().mockResolvedValue({})
+      }
+    } satisfies ChromeLike;
+
+    await focusOrOpenTabManager(chrome, { search: "1" });
+
+    expect(chrome.windows.update).toHaveBeenCalledWith(44, { focused: true });
+    expect(chrome.tabs.update).toHaveBeenCalledWith(9, {
+      active: true,
+      url: "chrome-extension://abc/index.html?search=1"
     });
     expect(chrome.tabs.create).not.toHaveBeenCalled();
   });
@@ -238,6 +265,30 @@ describe("chrome api adapter", () => {
     expect(chrome.tabs.remove).toHaveBeenCalledWith([3, 5]);
   });
 
+  it("closes duplicate TabDock tabs without closing the active triggering TabDock tab", async () => {
+    const chrome = {
+      runtime: { id: "abc" },
+      tabs: {
+        query: vi.fn(async (queryInfo: Record<string, unknown>) => {
+          if (queryInfo.active) {
+            return [{ id: 3, windowId: 20, title: "Current TabDock", url: "chrome-extension://abc/index.html?search=1" }];
+          }
+          return [
+            { id: 1, windowId: 10, title: "TabDock", url: "chrome-extension://abc/index.html" },
+            { id: 2, windowId: 10, title: "React", url: "https://react.dev/" },
+            { id: 3, windowId: 20, title: "Current TabDock", url: "chrome-extension://abc/index.html?search=1" },
+            { id: 4, windowId: 20, title: "React Duplicate", url: "https://react.dev/#docs" }
+          ];
+        }),
+        remove: vi.fn().mockResolvedValue(undefined)
+      }
+    } satisfies ChromeLike;
+
+    await expect(closeDuplicateOpenTabs(chrome)).resolves.toBe(2);
+
+    expect(chrome.tabs.remove).toHaveBeenCalledWith([1, 4]);
+  });
+
   it("uses populated Chrome windows to find duplicate tabs outside the current window", async () => {
     const chrome = {
       runtime: { id: "abc" },
@@ -268,7 +319,8 @@ describe("chrome api adapter", () => {
     await expect(closeDuplicateOpenTabs(chrome)).resolves.toBe(1);
 
     expect(chrome.windows.getAll).toHaveBeenCalledWith({ populate: true });
-    expect(chrome.tabs.query).not.toHaveBeenCalled();
+    expect(chrome.tabs.query).toHaveBeenCalledWith({ active: true, currentWindow: true });
+    expect(chrome.tabs.query).not.toHaveBeenCalledWith({});
     expect(chrome.tabs.remove).toHaveBeenCalledWith([3]);
   });
 
@@ -414,13 +466,23 @@ describe("chrome api adapter", () => {
 
     await expect(loadSettings(chrome)).resolves.toEqual({ appSearchShortcut: "Ctrl+K" });
     await expect(getGlobalSearchShortcut(chrome)).resolves.toBe("Ctrl+Shift+K");
-    await expect(getGlobalSearchShortcut(undefined)).resolves.toBe("Command+Shift+K");
+    await expect(getGlobalSearchShortcut(undefined)).resolves.toBe("Mod+Shift+K");
     await saveSettings(chrome, { appSearchShortcut: "Command+K" });
     expect(chrome.storage.local.set).toHaveBeenCalledWith({
       "tabdock:local-state:v1": expect.objectContaining({
         settings: { appSearchShortcut: "Command+K" }
       })
     });
+  });
+
+  it("keeps an existing Chrome command with no assigned shortcut unset", async () => {
+    const chrome = {
+      commands: {
+        getAll: vi.fn().mockResolvedValue([{ name: "open_global_search", shortcut: "" }])
+      }
+    } satisfies ChromeLike;
+
+    await expect(getGlobalSearchShortcut(chrome)).resolves.toBe("");
   });
 
   it("prefers the versioned local state over legacy workspace keys", async () => {
@@ -495,9 +557,14 @@ describe("chrome api adapter", () => {
 
   it("identifies the extension newtab page", () => {
     expect(isTabManagerUrl("chrome-extension://abc/index.html", "abc")).toBe(true);
+    expect(isTabManagerUrl("chrome://newtab/")).toBe(true);
     expect(isTabManagerUrl("https://example.test", "abc")).toBe(false);
     expect(isTabManagerUrl(undefined, "abc")).toBe(false);
     expect(isTabManagerUrl("chrome-extension://abc/index.html", undefined)).toBe(false);
+    expect(buildTabManagerUrl(
+      { runtime: { getURL: (path: string) => `chrome-extension://abc/${path}` } },
+      { search: "1" }
+    )).toBe("chrome-extension://abc/index.html?search=1");
   });
 
   it("detects the runtime Chrome object when present", () => {
