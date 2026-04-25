@@ -7,14 +7,25 @@ import {
   getChrome,
   getGlobalSearchShortcut,
   groupOpenTabs,
-  loadSettings,
-  loadWorkspace,
+  loadLocalState,
   moveOpenTabToWindow,
-  saveSettings,
-  saveWorkspace,
+  saveLocalState,
   searchRecentHistory,
   subscribeToOpenTabsChanges
 } from "./chrome/chromeApi";
+import {
+  authorizeBackupDirectory,
+  getBackupDirectoryStatus,
+  readLatestBackup,
+  writeLatestBackup,
+  type BackupDirectoryStatus
+} from "./chrome/localBackup";
+import {
+  createLocalState,
+  parseImportedLocalState,
+  serializeLocalState,
+  type TabDockLocalStateV1
+} from "./domain/persistence";
 import { buildSearchGroups } from "./domain/search";
 import {
   DEFAULT_GLOBAL_SEARCH_SHORTCUT,
@@ -66,6 +77,7 @@ type IconName =
   | "x";
 
 const now = () => Date.now();
+const maxImportFileSizeBytes = 2 * 1024 * 1024;
 
 const demoOpenBlocks: OpenTabBlock[] = [
   {
@@ -113,11 +125,14 @@ export const App = () => {
   const [collapsedOpenBlockIds, setCollapsedOpenBlockIds] = useState<ReadonlySet<number>>(() => new Set());
   const [isDeduplicating, setIsDeduplicating] = useState(false);
   const [dedupeStatus, setDedupeStatus] = useState("");
+  const [dataStatus, setDataStatus] = useState("");
+  const [backupStatus, setBackupStatus] = useState<BackupDirectoryStatus>("not-configured");
   const [loaded, setLoaded] = useState(false);
   const [tabSelectionStackId, setTabSelectionStackId] = useState<string>();
   const [selectedSavedTabIds, setSelectedSavedTabIds] = useState<ReadonlySet<string>>(() => new Set());
   const didHandleInitialUrlRef = useRef(false);
   const scrollbarRevealTimersRef = useRef(new Map<HTMLElement, number>());
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const activeSpace = getActiveSpace(workspace);
   const activeStacks = activeSpace?.stackIds.map((id) => workspace.stacks[id]).filter(Boolean) ?? [];
@@ -160,14 +175,16 @@ export const App = () => {
 
   useEffect(() => {
     const load = async () => {
-      const [saved, savedSettings, savedGlobalShortcut] = await Promise.all([
-        loadWorkspace(chromeApi),
-        loadSettings(chromeApi),
+      const [savedState, savedGlobalShortcut, savedBackupStatus] = await Promise.all([
+        loadLocalState(chromeApi),
         getGlobalSearchShortcut(chromeApi)
+          .catch(() => DEFAULT_GLOBAL_SEARCH_SHORTCUT),
+        getBackupDirectoryStatus()
       ]);
-      setWorkspace(saved);
-      setSettings(savedSettings);
+      setWorkspace(savedState.workspace);
+      setSettings(savedState.settings);
       setGlobalSearchShortcut(savedGlobalShortcut);
+      setBackupStatus(savedBackupStatus);
       setLoaded(true);
     };
     void load();
@@ -191,15 +208,29 @@ export const App = () => {
     if (!loaded) {
       return;
     }
-    void saveWorkspace(chromeApi, workspace);
-  }, [chromeApi, loaded, workspace]);
+    void saveLocalState(chromeApi, workspace, settings);
+  }, [chromeApi, loaded, settings, workspace]);
 
   useEffect(() => {
-    if (!loaded) {
+    if (!loaded || backupStatus !== "authorized") {
       return;
     }
-    void saveSettings(chromeApi, settings);
-  }, [chromeApi, loaded, settings]);
+
+    const timer = window.setTimeout(async () => {
+      const state = createLocalState(workspace, settings, now);
+      const status = await writeLatestBackup(serializeLocalState(state));
+      setBackupStatus(status);
+      if (status === "authorized") {
+        setDataStatus("已自动备份到本地目录。");
+      } else if (status === "permission-needed") {
+        setDataStatus("备份目录需要重新授权。");
+      } else if (status === "failed") {
+        setDataStatus("自动备份失败。");
+      }
+    }, 700);
+
+    return () => window.clearTimeout(timer);
+  }, [backupStatus, loaded, settings, workspace]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -349,6 +380,90 @@ export const App = () => {
       return;
     }
     window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const applyImportedState = (state: TabDockLocalStateV1) => {
+    clearSavedTabSelection();
+    setWorkspace(state.workspace);
+    setSettings(state.settings);
+    setDataStatus("已导入数据。");
+  };
+
+  const handleExportData = () => {
+    const state = createLocalState(workspace, settings, now);
+    const blob = new Blob([serializeLocalState(state)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "tabdock-backup.json";
+    link.click();
+    URL.revokeObjectURL(url);
+    setDataStatus("已导出数据。");
+  };
+
+  const handleImportButtonClick = () => {
+    importInputRef.current?.click();
+  };
+
+  const handleImportFile = async (file: File | undefined) => {
+    if (!file) {
+      return;
+    }
+    if (file.size > maxImportFileSizeBytes) {
+      setDataStatus("导入失败：文件过大。");
+      return;
+    }
+
+    const parsed = parseImportedLocalState(await file.text());
+    if (!parsed.ok) {
+      setDataStatus(`导入失败：${parsed.error}`);
+      return;
+    }
+
+    if (!window.confirm("导入会替换当前所有 TabDock 数据，是否继续？")) {
+      setDataStatus("已取消导入。");
+      return;
+    }
+
+    applyImportedState(parsed.state);
+  };
+
+  const handleAuthorizeBackupDirectory = async () => {
+    setDataStatus("正在请求备份目录授权...");
+    const status = await authorizeBackupDirectory();
+    setBackupStatus(status);
+    if (status !== "authorized") {
+      setDataStatus(formatBackupStatus(status));
+      return;
+    }
+
+    const state = createLocalState(workspace, settings, now);
+    const backupWriteStatus = await writeLatestBackup(serializeLocalState(state));
+    setBackupStatus(backupWriteStatus);
+    setDataStatus(backupWriteStatus === "authorized" ? "已授权并完成本地备份。" : formatBackupStatus(backupWriteStatus));
+  };
+
+  const handleRestoreLatestBackup = async () => {
+    const result = await readLatestBackup();
+    if (!result.ok) {
+      setBackupStatus(result.status);
+      setDataStatus(result.error ?? formatBackupStatus(result.status));
+      return;
+    }
+
+    const parsed = parseImportedLocalState(result.content);
+    if (!parsed.ok) {
+      setDataStatus(`恢复失败：${parsed.error}`);
+      return;
+    }
+
+    if (!window.confirm("从本地备份恢复会替换当前所有 TabDock 数据，是否继续？")) {
+      setDataStatus("已取消恢复。");
+      return;
+    }
+
+    applyImportedState(parsed.state);
+    setDataStatus("已从本地备份恢复。");
   };
 
   const handleDropOnStack = (stackId: string, event: React.DragEvent) => {
@@ -938,9 +1053,17 @@ export const App = () => {
         <SettingsModal
           appSearchShortcut={settings.appSearchShortcut}
           appSearchShortcutLabel={appSearchShortcutLabel}
+          backupStatus={backupStatus}
+          dataStatus={dataStatus}
           globalSearchShortcutLabel={globalSearchShortcutLabel}
+          importInputRef={importInputRef}
+          onAuthorizeBackupDirectory={() => void handleAuthorizeBackupDirectory()}
           onClose={() => setIsSettingsOpen(false)}
+          onExportData={handleExportData}
+          onImportButtonClick={handleImportButtonClick}
+          onImportFile={(file) => void handleImportFile(file)}
           onOpenChromeShortcuts={() => void openUrl("chrome://extensions/shortcuts")}
+          onRestoreLatestBackup={() => void handleRestoreLatestBackup()}
           onSetAppSearchShortcut={(shortcut) =>
             setSettings((currentSettings) => ({ ...currentSettings, appSearchShortcut: shortcut }))
           }
@@ -953,16 +1076,32 @@ export const App = () => {
 const SettingsModal = ({
   appSearchShortcut,
   appSearchShortcutLabel,
+  backupStatus,
+  dataStatus,
   globalSearchShortcutLabel,
+  importInputRef,
+  onAuthorizeBackupDirectory,
   onClose,
+  onExportData,
+  onImportButtonClick,
+  onImportFile,
   onOpenChromeShortcuts,
+  onRestoreLatestBackup,
   onSetAppSearchShortcut
 }: {
   appSearchShortcut: string;
   appSearchShortcutLabel: string;
+  backupStatus: BackupDirectoryStatus;
+  dataStatus: string;
   globalSearchShortcutLabel: string;
+  importInputRef: React.RefObject<HTMLInputElement | null>;
+  onAuthorizeBackupDirectory: () => void;
   onClose: () => void;
+  onExportData: () => void;
+  onImportButtonClick: () => void;
+  onImportFile: (file: File | undefined) => void;
   onOpenChromeShortcuts: () => void;
+  onRestoreLatestBackup: () => void;
   onSetAppSearchShortcut: (shortcut: string) => void;
 }) => (
   <div className="search-backdrop" onMouseDown={onClose}>
@@ -1000,9 +1139,60 @@ const SettingsModal = ({
         在 Chrome 中修改全局快捷键
       </button>
       <p className="settings-note">当前应用内快捷键：{appSearchShortcut}</p>
+      <div className="settings-section">
+        <h3>数据</h3>
+        <div className="settings-actions">
+          <button data-testid="export-data" type="button" onClick={onExportData}>
+            导出数据
+          </button>
+          <button data-testid="import-data" type="button" onClick={onImportButtonClick}>
+            导入数据
+          </button>
+          <button data-testid="authorize-backup-directory" type="button" onClick={onAuthorizeBackupDirectory}>
+            授权备份目录
+          </button>
+          <button
+            data-testid="restore-latest-backup"
+            type="button"
+            disabled={backupStatus !== "authorized"}
+            onClick={onRestoreLatestBackup}
+          >
+            从备份恢复
+          </button>
+        </div>
+        <input
+          ref={importInputRef}
+          data-testid="import-data-input"
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={(event) => {
+            onImportFile(event.currentTarget.files?.[0]);
+            event.currentTarget.value = "";
+          }}
+        />
+        <p className="settings-note">本地备份：{formatBackupStatus(backupStatus)}</p>
+        {dataStatus && <p className="settings-note" data-testid="data-status">{dataStatus}</p>}
+      </div>
     </section>
   </div>
 );
+
+const formatBackupStatus = (status: BackupDirectoryStatus): string => {
+  if (status === "authorized") {
+    return "已授权";
+  }
+  if (status === "permission-needed") {
+    return "需要重新授权";
+  }
+  if (status === "unsupported") {
+    return "当前浏览器不支持目录备份";
+  }
+  if (status === "failed") {
+    return "备份失败";
+  }
+  return "未授权";
+};
 
 const SearchModal = ({
   flatResults,

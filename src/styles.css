@@ -1094,6 +1094,41 @@ kbd {
   font-size: 12px;
 }
 
+.settings-section {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-section h3 {
+  color: var(--charcoal);
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+.settings-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.settings-actions button {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--charcoal);
+  background: var(--cream);
+  font-weight: 700;
+}
+
+.settings-actions button:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+  opacity: 0.62;
+}
+
 .result-groups {
   padding: 10px;
 }

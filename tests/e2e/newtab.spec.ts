@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 test.describe("TabDock newtab MVP", () => {
   test.beforeEach(async ({ page }) => {
@@ -347,9 +350,110 @@ test.describe("TabDock newtab MVP", () => {
     await expect(page.getByTestId("settings-modal")).toBeVisible();
     await expect(page.getByTestId("app-search-shortcut")).toHaveValue(/K/);
     await expect(page.getByLabel("全局搜索快捷键", { exact: true })).toHaveValue(/K/);
+    await expect(page.getByTestId("export-data")).toBeVisible();
+    await expect(page.getByTestId("import-data")).toBeVisible();
+    await expect(page.getByTestId("authorize-backup-directory")).toBeVisible();
+    await expect(page.getByText(/本地备份/)).toBeVisible();
 
     await page.getByTestId("app-search-shortcut").press(process.platform === "darwin" ? "Meta+Shift+J" : "Control+Shift+J");
     await expect(page.getByTestId("app-search-shortcut")).toHaveValue(/J/);
+  });
+
+  test("exports a JSON backup from settings", async ({ page }) => {
+    await createSpace(page, "Export Space");
+    await createStack(page, "Export Stack");
+    const stack = stackByName(page, "Export Stack");
+    await page.getByTestId("open-tab").filter({ hasText: "React" }).dragTo(stack);
+
+    await page.getByTestId("settings-entry").click();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByTestId("export-data").click();
+    const download = await downloadPromise;
+    const downloadPath = await download.path();
+    expect(downloadPath).toBeTruthy();
+    const content = await readFile(downloadPath ?? "", "utf8");
+
+    expect(download.suggestedFilename()).toBe("tabdock-backup.json");
+    expect(content).toContain("Export Space");
+    expect(content).toContain("Export Stack");
+    expect(content).toContain("https://react.dev");
+  });
+
+  test("imports a JSON backup as a full replacement", async ({ page }) => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "tabdock-import-"));
+    const importPath = path.join(tempDir, "tabdock-import.json");
+    await writeFile(importPath, JSON.stringify(createImportFixture("Imported Space", "Imported Stack"), null, 2));
+
+    try {
+      await createSpace(page, "Old Space");
+      await page.getByTestId("settings-entry").click();
+      const fileChooserPromise = page.waitForEvent("filechooser");
+      await page.getByTestId("import-data").click();
+      const fileChooser = await fileChooserPromise;
+      await confirmNextDialog(page, true);
+      await fileChooser.setFiles(importPath);
+
+      await expect(spaceByName(page, "Imported Space")).toBeVisible();
+      await expect(stackByName(page, "Imported Stack")).toBeVisible();
+      await expect(page.getByText("Old Space")).toHaveCount(0);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps current data when importing invalid JSON", async ({ page }) => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "tabdock-import-invalid-"));
+    const importPath = path.join(tempDir, "bad.json");
+    await writeFile(importPath, "{bad json");
+
+    try {
+      await createSpace(page, "Safe Space");
+      await page.getByTestId("settings-entry").click();
+      const fileChooserPromise = page.waitForEvent("filechooser");
+      await page.getByTestId("import-data").click();
+      const fileChooser = await fileChooserPromise;
+      await fileChooser.setFiles(importPath);
+
+      await expect(page.getByTestId("data-status")).toContainText("导入失败");
+      await expect(spaceByName(page, "Safe Space")).toBeVisible();
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("writes latest.json after backup directory authorization and data changes", async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.assign(window, { __tabdockBackupWrites: [] });
+      Object.assign(window, {
+        showDirectoryPicker: async () => ({
+          kind: "directory",
+          name: "TabDock Backup",
+          queryPermission: async () => "granted",
+          getFileHandle: async () => ({
+            createWritable: async () => ({
+              write: async (content: string) => {
+                (window as typeof window & { __tabdockBackupWrites: string[] }).__tabdockBackupWrites.push(content);
+              },
+              close: async () => undefined
+            }),
+            getFile: async () => ({ text: async () => "{}" })
+          })
+        })
+      });
+    });
+    await page.goto("/");
+    await expect(page.getByTestId("tab-manager-shell")).toBeVisible();
+
+    await page.getByTestId("settings-entry").click();
+    await page.getByTestId("authorize-backup-directory").click();
+    await expect(page.getByTestId("data-status")).toContainText("已授权");
+    await page.getByTestId("settings-modal").getByTitle("关闭").click();
+
+    await createSpace(page, "Auto Backup");
+
+    await expect.poll(async () =>
+      page.evaluate(() => (window as typeof window & { __tabdockBackupWrites: string[] }).__tabdockBackupWrites.join("\n"))
+    ).toContain("Auto Backup");
   });
 
   test("keeps short stacks content-sized while long stacks scroll internally", async ({ page }) => {
@@ -1024,4 +1128,51 @@ const expectSpaceOrder = async (page: import("@playwright/test").Page, names: st
       .allTextContents();
     return labels.slice(0, names.length);
   }).toEqual(names);
+};
+
+const createImportFixture = (spaceName: string, stackName: string) => {
+  const now = Date.UTC(2026, 3, 23);
+  return {
+    format: "tabdock.local-state",
+    schemaVersion: 1,
+    updatedAt: now,
+    workspace: {
+      spaceIds: ["imported-space"],
+      activeSpaceId: "imported-space",
+      spaces: {
+        "imported-space": {
+          id: "imported-space",
+          name: spaceName,
+          stackIds: ["imported-stack"],
+          createdAt: now,
+          updatedAt: now
+        }
+      },
+      stacks: {
+        "imported-stack": {
+          id: "imported-stack",
+          spaceId: "imported-space",
+          name: stackName,
+          tabIds: ["imported-tab"],
+          createdAt: now,
+          updatedAt: now
+        }
+      },
+      tabs: {
+        "imported-tab": {
+          id: "imported-tab",
+          spaceId: "imported-space",
+          stackId: "imported-stack",
+          title: "Imported URL",
+          url: "https://imported.test",
+          source: "manual",
+          createdAt: now,
+          updatedAt: now
+        }
+      }
+    },
+    settings: {
+      appSearchShortcut: "Ctrl+K"
+    }
+  };
 };

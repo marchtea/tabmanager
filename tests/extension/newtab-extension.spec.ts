@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 
 const extensionPath = path.resolve("dist");
 const requiredPermissions = ["storage", "tabs", "windows", "history", "scripting"];
+const expectedExtensionId = "njjajlbhhkkdchmicnpomaimigohlpda";
 const execFileAsync = promisify(execFile);
 
 test.describe("built Chrome extension package", () => {
@@ -16,6 +17,7 @@ test.describe("built Chrome extension package", () => {
     expect(manifest.manifest_version).toBe(3);
     expect(manifest.chrome_url_overrides).toEqual({ newtab: "index.html" });
     expect(manifest.background).toEqual({ service_worker: "assets/background.js", type: "module" });
+    expect(manifest.key).toBeTruthy();
     expect(manifest.commands["open_global_search"].suggested_key).toEqual({
       default: "Ctrl+Shift+K",
       mac: "Command+Shift+K"
@@ -74,7 +76,7 @@ test.describe("built Chrome extension package", () => {
         };
       });
 
-      expect(chromeApiState.runtimeId).toBeTruthy();
+      expect(chromeApiState.runtimeId).toBe(expectedExtensionId);
       expect(chromeApiState).toMatchObject({
         storage: true,
         tabs: true,

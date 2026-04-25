@@ -10,11 +10,13 @@ import {
   getGlobalSearchShortcut,
   getMetaDescription,
   handleGlobalSearchResult,
+  loadLocalState,
   loadSettings,
   loadWorkspace,
   groupOpenTabs,
   isTabManagerUrl,
   moveOpenTabToWindow,
+  saveLocalState,
   saveSettings,
   saveWorkspace,
   searchRecentHistory,
@@ -359,18 +361,24 @@ describe("chrome api adapter", () => {
     await expect(searchRecentHistory({}, "", 1000)).resolves.toEqual([]);
   });
 
-  it("loads and saves workspace state with local storage fallback", async () => {
+  it("loads and saves workspace state with versioned local storage and legacy fallback", async () => {
     const state = { spaceIds: [], spaces: {}, stacks: {}, tabs: {}, activeSpaceId: undefined };
     const chrome = {
       storage: {
         local: {
-          get: vi.fn().mockResolvedValue({ tabManagerWorkspace: state }),
+          get: vi.fn().mockResolvedValue({ tabManagerWorkspace: state, tabManagerSettings: { appSearchShortcut: "Ctrl+K" } }),
           set: vi.fn().mockResolvedValue(undefined)
         }
       }
     } satisfies ChromeLike;
 
     await expect(loadWorkspace(chrome)).resolves.toEqual(state);
+    await expect(loadLocalState(chrome)).resolves.toMatchObject({
+      format: "tabdock.local-state",
+      schemaVersion: 1,
+      workspace: state,
+      settings: { appSearchShortcut: "Ctrl+K" }
+    });
     await saveWorkspace(chrome, state);
     await expect(loadWorkspace(undefined)).resolves.toEqual({ spaceIds: [], spaces: {}, stacks: {}, tabs: {} });
     await expect(loadWorkspace({ storage: { local: { get: vi.fn().mockResolvedValue({ tabManagerWorkspace: null }) } } })).resolves.toEqual({
@@ -380,7 +388,12 @@ describe("chrome api adapter", () => {
       tabs: {}
     });
     await expect(saveWorkspace(undefined, state)).resolves.toBeUndefined();
-    expect(chrome.storage.local.set).toHaveBeenCalledWith({ tabManagerWorkspace: state });
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({
+      "tabdock:local-state:v1": expect.objectContaining({
+        format: "tabdock.local-state",
+        workspace: state
+      })
+    });
   });
 
   it("loads settings and reads Chrome command shortcuts", async () => {
@@ -404,7 +417,39 @@ describe("chrome api adapter", () => {
     await expect(getGlobalSearchShortcut(undefined)).resolves.toBe("Command+Shift+K");
     await saveSettings(chrome, { appSearchShortcut: "Command+K" });
     expect(chrome.storage.local.set).toHaveBeenCalledWith({
-      tabManagerSettings: { appSearchShortcut: "Command+K" }
+      "tabdock:local-state:v1": expect.objectContaining({
+        settings: { appSearchShortcut: "Command+K" }
+      })
+    });
+  });
+
+  it("prefers the versioned local state over legacy workspace keys", async () => {
+    const chrome = {
+      storage: {
+        local: {
+          get: vi.fn().mockResolvedValue({
+            "tabdock:local-state:v1": {
+              format: "tabdock.local-state",
+              schemaVersion: 1,
+              updatedAt: 123,
+              workspace: { spaceIds: ["space-1"], spaces: { "space-1": { id: "space-1", name: "New", stackIds: [], createdAt: 1, updatedAt: 1 } }, stacks: {}, tabs: {} },
+              settings: { appSearchShortcut: "Alt+J" }
+            },
+            tabManagerWorkspace: { spaceIds: [], spaces: {}, stacks: {}, tabs: {} }
+          }),
+          set: vi.fn().mockResolvedValue(undefined)
+        }
+      }
+    } satisfies ChromeLike;
+
+    await expect(loadLocalState(chrome)).resolves.toMatchObject({
+      updatedAt: 123,
+      workspace: { spaceIds: ["space-1"] },
+      settings: { appSearchShortcut: "Alt+J" }
+    });
+    await saveLocalState(chrome, { spaceIds: [], spaces: {}, stacks: {}, tabs: {} }, { appSearchShortcut: "Ctrl+K" });
+    expect(chrome.storage.local.set).toHaveBeenLastCalledWith({
+      "tabdock:local-state:v1": expect.objectContaining({ settings: { appSearchShortcut: "Ctrl+K" } })
     });
   });
 

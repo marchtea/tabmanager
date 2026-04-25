@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "TabDock",
   "version": "0.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArjqfmU3J7IG/rFmUv8UoiCE5vQhdjIouPBiuIpBB+7CQgzIvIcNFd0hCRmoNU2laNdBoGNPTNdQ6lQsRvrhWT/B/IOorG8W0pxlxYhg8N6copgwpUvDcwQgci+Iofl6MJTZfUlLXWAlOwko3e1TAOb7YyxmFoVMhXe+UCe9UMyl4i0kAzRkh9pSy5db1Jj2poniF84HQ9VgzbiUA5p8NWqYUixl7P1e8SvjfYHLNWiO+DjbSZ8TLTHNniJdg5reMMG/xcgok5Z4QXQpEvNaTOhGGglxzT7wKaFGKGiiNjePpK/q8Sqm+GSI+rfrSSndi0SjxD2rv5uzXHow5rZPjqwIDAQAB",
   "description": "A local-first Chrome new tab workspace manager for spaces, stacks, and tabs.",
   "permissions": ["storage", "tabs", "windows", "history", "scripting"],
   "host_permissions": ["<all_urls>"],

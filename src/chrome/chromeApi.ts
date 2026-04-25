@@ -1,12 +1,14 @@
 import { normalizeUrl } from "../domain/workspaceStore";
 import { buildSearchGroups } from "../domain/search";
-import { normalizeSettings } from "../domain/settings";
+import { defaultSettings, normalizeSettings } from "../domain/settings";
 import type { HistoryEntry, OpenTab, OpenTabBlock, SearchGroups, SearchResult, TabManagerSettings, WorkspaceState } from "../domain/types";
 import { emptyWorkspaceState, normalizeWorkspaceState } from "../domain/workspaceStore";
+import { createLocalState, isWorkspaceState, normalizeLocalState, type TabDockLocalStateV1 } from "../domain/persistence";
 import type { ChromeHistoryRecord, ChromeLike, ChromeTabRecord } from "./chromeTypes";
 
 const STORAGE_KEY = "tabManagerWorkspace";
 const SETTINGS_STORAGE_KEY = "tabManagerSettings";
+const LOCAL_STATE_STORAGE_KEY = "tabdock:local-state:v1";
 const GLOBAL_SEARCH_COMMAND = "open_global_search";
 
 export const getChrome = (): ChromeLike | undefined => {
@@ -231,28 +233,56 @@ export const handleGlobalSearchResult = async (
 };
 
 export const loadWorkspace = async (chromeApi: ChromeLike | undefined): Promise<WorkspaceState> => {
-  const data = await chromeApi?.storage?.local?.get?.([STORAGE_KEY]);
-  const value = data?.[STORAGE_KEY];
-  return isWorkspaceState(value) ? normalizeWorkspaceState(value) : emptyWorkspaceState();
+  return (await loadLocalState(chromeApi)).workspace;
 };
 
 export const saveWorkspace = async (
   chromeApi: ChromeLike | undefined,
   state: WorkspaceState
 ): Promise<void> => {
-  await chromeApi?.storage?.local?.set?.({ [STORAGE_KEY]: state });
+  const currentState = await loadLocalState(chromeApi);
+  await saveLocalState(chromeApi, state, currentState.settings);
 };
 
 export const loadSettings = async (chromeApi: ChromeLike | undefined): Promise<TabManagerSettings> => {
-  const data = await chromeApi?.storage?.local?.get?.([SETTINGS_STORAGE_KEY]);
-  return normalizeSettings(data?.[SETTINGS_STORAGE_KEY]);
+  return (await loadLocalState(chromeApi)).settings;
 };
 
 export const saveSettings = async (
   chromeApi: ChromeLike | undefined,
   settings: TabManagerSettings
 ): Promise<void> => {
-  await chromeApi?.storage?.local?.set?.({ [SETTINGS_STORAGE_KEY]: normalizeSettings(settings) });
+  const currentState = await loadLocalState(chromeApi);
+  await saveLocalState(chromeApi, currentState.workspace, settings);
+};
+
+export const loadLocalState = async (chromeApi: ChromeLike | undefined): Promise<TabDockLocalStateV1> => {
+  const data = await chromeApi?.storage?.local?.get?.([
+    LOCAL_STATE_STORAGE_KEY,
+    STORAGE_KEY,
+    SETTINGS_STORAGE_KEY
+  ]);
+  const persistedState = normalizeLocalState(data?.[LOCAL_STATE_STORAGE_KEY]);
+  if (persistedState) {
+    return persistedState;
+  }
+
+  const legacyWorkspace = data?.[STORAGE_KEY];
+  return createLocalState(
+    isWorkspaceState(legacyWorkspace) ? normalizeWorkspaceState(legacyWorkspace) : emptyWorkspaceState(),
+    normalizeSettings(data?.[SETTINGS_STORAGE_KEY] ?? defaultSettings()),
+    () => 0
+  );
+};
+
+export const saveLocalState = async (
+  chromeApi: ChromeLike | undefined,
+  workspace: WorkspaceState,
+  settings: TabManagerSettings
+): Promise<TabDockLocalStateV1> => {
+  const state = createLocalState(workspace, settings, () => Date.now());
+  await chromeApi?.storage?.local?.set?.({ [LOCAL_STATE_STORAGE_KEY]: state });
+  return state;
 };
 
 export const getGlobalSearchShortcut = async (chromeApi: ChromeLike | undefined): Promise<string> => {
@@ -286,16 +316,4 @@ const mapHistoryRecord = (record: ChromeHistoryRecord): HistoryEntry[] => {
       lastVisitTime: record.lastVisitTime ?? 0
     }
   ];
-};
-
-const isWorkspaceState = (value: unknown): value is WorkspaceState => {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const candidate = value as Partial<WorkspaceState>;
-  return (
-    typeof candidate.spaces === "object" &&
-    typeof candidate.stacks === "object" &&
-    typeof candidate.tabs === "object"
-  );
 };
