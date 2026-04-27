@@ -4,14 +4,22 @@
 
 本产品是一个参考 Stackable 交互形态的 Chrome TabDock。第一版以 Chrome Extension 的新标签页为主入口，帮助用户把当前打开的 Chrome tabs 整理为本地保存的工作区结构。
 
-MVP 目标：
+MVP 已实现目标：
 
 - 替换 Chrome New Tab 页面，打开新标签页即进入 TabDock。
 - 管理本地保存的 Spaces、Stacks 和 Tabs。
 - 右侧展示当前 Chrome Profile 下所有打开的 tabs，按 Chrome window 分 block。
 - 支持从当前打开 tabs 拖拽保存到 workspace/stack。
 - 支持搜索 saved 数据、当前打开 tabs、近 90 天 Chrome history。
-- 支持批量读取网页 `meta description`，用于搜索增强。
+- 支持应用内搜索快捷键和 Chrome 全局搜索命令。
+- 支持关闭重复打开的 tabs、关闭单个 open tab、关闭整个 Chrome window。
+- 支持在不同 Chrome window block 之间拖动 open tab。
+- 支持 JSON 导入/导出、本地目录自动备份和从最新备份恢复。
+
+规划中但尚未完整落地：
+
+- 批量读取真实网页 `meta description`，用于搜索增强。
+- 更细粒度的 saved tab 插入位置反馈。
 
 第一版暂不包含：
 
@@ -29,6 +37,10 @@ MVP 目标：
   - 左侧：搜索入口 + Spaces 列表。
   - 中间：当前打开 Space 的 Stacks 看板。
   - 右侧：当前打开 tabs 浮窗，按 window 分 block。
+- Chrome action/commands 可触发全局搜索：
+  - 在 TabDock 页面内直接打开并聚焦搜索弹窗。
+  - 在普通网页上注入轻量搜索 overlay。
+  - 如果当前页面无法注入，则回退打开或聚焦 TabDock 页面。
 
 ### 2.2 核心概念
 
@@ -37,6 +49,14 @@ MVP 目标：
 - `Saved Tab`：保存到 Stack 中的页面记录，是扩展自己的独立本地记录，不写入 Chrome bookmarks。
 - `Open Tab Block`：当前 Chrome Profile 下一个 Chrome window 对应一个 block。
 - `Open Tab`：当前浏览器实际打开的 tab，可被拖入 stack 保存。
+
+### 2.3 当前实现状态
+
+- `Space`、`Stack`、`Saved Tab` 的 CRUD、排序、拖拽保存和本地持久化已实现。
+- 新标签页三栏工作台、右侧 Open Tabs 浮窗、搜索弹窗、设置弹窗已实现。
+- Open Tabs 面板支持折叠、刷新、窗口 block 折叠、关闭 tab/window、重复 tab 清理、跨 window 移动 tab。
+- 数据管理支持 JSON 导出、JSON 导入替换、授权本地目录、自动写入 `latest.json`、从 `latest.json` 恢复。
+- 全局搜索支持 Chrome command、普通网页 overlay、TabDock 页面内搜索弹窗复用。
 
 ## 3. 功能需求
 
@@ -52,6 +72,8 @@ MVP 目标：
 - 提供新增 space 入口。
 - Space 支持重命名、删除。
 - 删除 space 前二次确认；删除只影响本地保存数据，不关闭真实 Chrome tabs。
+- Space 支持拖拽排序。
+- 侧边栏提供设置入口。
 
 ### 3.2 搜索弹窗
 
@@ -59,9 +81,19 @@ MVP 目标：
 
 - Saved Spaces：按 space 名称搜索。
 - Saved Stacks：按 stack 名称搜索。
-- Saved Tabs：按 title、URL、meta description 搜索。
-- Open Tabs：按 title、URL、meta description 搜索。
+- Saved Tabs：按 title、URL、description 搜索。
+- Open Tabs：按 title、URL 搜索；如果已有 description，则纳入搜索。
 - Chrome History：搜索近 90 天 history，按 title、URL 匹配。
+
+入口：
+
+- 点击左侧搜索入口打开应用内搜索弹窗。
+- 使用应用内快捷键打开搜索弹窗。
+- 使用 Chrome 全局命令快捷键打开搜索：
+  - 默认 `Ctrl+Shift+K`，macOS 默认 `Command+Shift+K`。
+  - 在 TabDock 页面内打开原生搜索弹窗并自动聚焦输入框。
+  - 在普通网页上打开注入式 overlay，输入、方向键和 Enter 不透传到原页面。
+  - 在无法注入的页面回退到打开 TabDock 并带 `search=1` 参数。
 
 结果展示：
 
@@ -69,6 +101,7 @@ MVP 目标：
 - 结果按类型分组：Spaces、Stacks、Saved Tabs、Open Tabs、History。
 - 支持键盘上下选择和 Enter 打开。
 - 支持鼠标点击结果。
+- 打开后输入框必须立即聚焦，用户可直接输入。
 
 点击行为：
 
@@ -85,6 +118,7 @@ MVP 目标：
 顶部：
 
 - 展示当前 space 名称。
+- 展示当前 space 的 stack 数量和 saved tab 数量。
 - 标题最右侧展示 `+` 按钮，用于新增 stack。
 
 Stacks 展示：
@@ -93,6 +127,8 @@ Stacks 展示：
 - 每个 stack 固定宽度。
 - Stack 内 tabs 垂直排列。
 - 主区域支持横向滚动，stack 不需要铺满屏幕。
+- 短 stack 内容自适应高度；长 stack 内部滚动。
+- 横向/纵向滚动时短暂显示滚动条反馈。
 
 Stack 操作：
 
@@ -100,6 +136,7 @@ Stack 操作：
 - 点击操作图标展示菜单：
   - 编辑 stack 名称。
   - 删除 stack。
+- Stack 标题区提供批量选择 saved tabs 入口。
 - 删除 stack 前二次确认；删除只影响本地保存数据，不关闭真实 Chrome tabs。
 - 按住并拖动 stack 标题：调整 stack 在当前 space 内的顺序。
 - 拖动结束后立即持久化排序。
@@ -110,6 +147,7 @@ Saved Tab 操作：
 - 点击 saved tab 按“已开则切换，否则新开”规则打开。
 - 支持从一个 stack 拖动 tab 到同 stack 内重新排序。
 - 支持从一个 stack 拖动 tab 到另一个 stack，改变分类并插入目标位置。
+- 支持进入单个 stack 的选择模式，选择多个 saved tabs 后一次性删除。
 - 同一个 URL 在同一 space 内只保存一份。
 - 如果用户把已存在于当前 space 的 URL 拖入另一个 stack：
   - 移动现有 saved tab 到目标 stack。
@@ -124,13 +162,16 @@ Saved Tab 操作：
 - 每个 window 是一个 block。
 - Block 标题展示 tab 数量和 window 标识，例如 `Window 1 · 12 tabs`。
 - 每个 block 内展示该 window 的 tabs。
+- Block 标题支持折叠/展开；滚动时标题保持 sticky。
+- 面板支持整体折叠成窄 rail，并展示 open tab 总数。
 - 排除当前 TabDock 新标签页自身，避免管理器页面污染列表。
 - 对无法访问的页面，例如 `chrome://`、Chrome Web Store、扩展页面，仍展示 title/URL；meta description 可为空。
+- Chrome tabs 创建、更新、删除时自动刷新 open tabs 列表。
 
 拖拽行为：
 
 - 拖动单个 open tab 到某个 stack：
-  - 读取并保存 title、URL、favicon、meta description。
+  - 读取并保存 title、URL、favicon；如果已有 description，则一并保存。
   - 原始浏览器 tab 保留，不关闭。
   - 如果同 URL 已存在于当前 space，则移动已有 saved tab 到目标 stack。
 - 拖动 block 标题到当前 workspace：
@@ -139,12 +180,62 @@ Saved Tab 操作：
   - 确认后创建新 stack，并将该 block/window 下所有可保存 tabs 加入新 stack。
   - 同 URL 在当前 space 已存在时，不重复创建，改为移动到新 stack。
 - 取消弹窗则不创建 stack，不保存 tabs。
+- 拖动一个 open tab 到另一个 window block：
+  - 调用 Chrome tabs move，将该 tab 移入目标 window 末尾。
+  - 移动后刷新 block 数量和列表。
+
+Open Tabs 操作：
+
+- 点击 open tab：按“已开则切换，否则新开”规则聚焦对应 tab。
+- Hover open tab 显示关闭按钮；点击后关闭真实 Chrome tab，并刷新列表。
+- Hover window block 标题显示关闭按钮；点击后关闭真实 Chrome window，并刷新列表。
+- 点击刷新按钮手动重新读取当前 tabs/windows。
+- 点击去重按钮关闭重复 open tabs：
+  - URL 去重使用标准化 URL，忽略 hash、尾部斜杠和常见追踪参数。
+  - 如果重复项包含当前活跃 TabDock tab，保留当前活跃 TabDock tab。
+  - 操作完成后显示关闭数量或“没有重复 Tab”。
+
+### 3.5 设置与数据管理
+
+快捷键：
+
+- 设置弹窗展示当前搜索快捷键。
+- 快捷键来源于 Chrome commands 配置；应用内搜索和全局搜索使用同一个快捷键。
+- 提供跳转 `chrome://extensions/shortcuts` 的入口，由 Chrome 管理快捷键修改。
+
+导入导出：
+
+- 支持导出完整本地状态为 `tabdock-backup.json`。
+- 支持从 JSON 文件导入完整状态；导入前二次确认。
+- 导入是全量替换当前 TabDock 数据。
+- 导入文件大小上限为 2 MB。
+- JSON 解析失败或格式不符合 TabDock 备份 schema 时，不覆盖当前数据，并显示错误。
+
+本地目录备份：
+
+- 支持通过 File System Access API 授权本地备份目录。
+- 授权后立即写入 `latest.json`。
+- 授权有效期间，workspace/settings 变化后自动写入最新备份。
+- 支持从授权目录中的 `latest.json` 恢复；恢复前二次确认。
+- 浏览器不支持目录授权、权限失效、读写失败时显示对应状态。
 
 ## 4. 数据、权限与接口
 
 ### 4.1 本地数据模型
 
-本地使用 `chrome.storage.local` 保存：
+本地使用 `chrome.storage.local` 保存 `TabDockLocalStateV1`。旧版 `tabManagerWorkspace` 和 `tabManagerSettings` 读取时会被归一化为新版状态。
+
+```ts
+type TabDockLocalStateV1 = {
+  format: "tabdock.local-state";
+  schemaVersion: 1;
+  updatedAt: number;
+  workspace: WorkspaceState;
+  settings: TabManagerSettings;
+};
+```
+
+Workspace 数据模型：
 
 ```ts
 type Space = {
@@ -176,22 +267,40 @@ type SavedTab = {
   createdAt: number;
   updatedAt: number;
 };
+
+type WorkspaceState = {
+  spaceIds: string[];
+  spaces: Record<string, Space>;
+  stacks: Record<string, Stack>;
+  tabs: Record<string, SavedTab>;
+  activeSpaceId?: string;
+};
+
+type TabManagerSettings = {
+  appSearchShortcut: string;
+};
 ```
 
 ### 4.2 Chrome Extension 权限
 
-MVP 需要：
+当前实现需要：
 
 - `storage`：保存 spaces/stacks/tabs。
 - `tabs`：读取和切换当前 profile 的 tabs。
-- `windows`：按 window 分组展示 open tabs。
+- `windows`：按 window 分组展示 open tabs，聚焦 window，关闭 window。
 - `history`：搜索近 90 天 Chrome history。
-- `scripting` + host permissions：批量读取打开页面的 `meta description`。
+- `scripting` + host permissions：在普通网页注入全局搜索 overlay；后续用于读取 `meta description`。
 - `chrome_url_overrides.newtab`：替换新标签页。
+- `commands.open_global_search`：注册 Chrome 全局搜索快捷键。
+- `background.service_worker`：处理全局搜索命令、搜索消息和结果跳转。
+- `action`：提供扩展入口和图标。
+- File System Access API：授权本地目录并读写 `latest.json`，非 manifest 权限。
 
 权限策略：
 
-- 批量读取当前打开 tabs 的 meta description。
+- 普通网页全局搜索优先注入 overlay。
+- 对 Chrome 禁止注入的页面优雅降级，打开或聚焦 TabDock 页面。
+- 读取真实 open tabs 时仅依赖 title/URL/favicon；`meta description` 读取规划中。
 - 对 Chrome 禁止注入的页面优雅降级，只使用 title/URL。
 - 读取失败不阻塞保存和搜索。
 
@@ -201,6 +310,11 @@ MVP 需要：
 - Space 内 URL 全局去重。
 - 删除 space/stack/saved tab 不影响真实打开的 Chrome tabs。
 - 拖拽排序是权威顺序，刷新页面后保持不变。
+- Space 排序通过 `spaceIds` 持久化。
+- Stack 排序通过 Space 的 `stackIds` 持久化。
+- Saved tab 排序通过 Stack 的 `tabIds` 持久化。
+- 导入、恢复和自动备份使用同一 `TabDockLocalStateV1` schema。
+- URL 标准化会移除 hash、尾部斜杠和常见追踪参数，用于 saved tab 去重和 open tab 去重。
 
 ## 5. 交互与视觉要求
 
@@ -210,9 +324,11 @@ MVP 需要：
   - 左侧 sidebar 固定宽度。
   - 中间 workspace 占主要空间。
   - 右侧 open tabs 浮窗固定宽度，可滚动。
+  - 右侧 open tabs 浮窗可折叠，折叠态不遮挡 workspace。
 - Stack 和 tab card 尺寸稳定，拖拽、hover、菜单出现时不造成布局跳动。
 - 搜索弹窗居中覆盖页面，背景遮罩。
 - 搜索弹窗支持键盘操作。
+- 搜索弹窗和全局 overlay 打开后必须抢占焦点，支持直接输入。
 - 拖拽时必须有明确 hover/drop 反馈。
 - 空状态要可操作：
   - 无 space：提示创建第一个 space。
@@ -225,13 +341,21 @@ MVP 需要：
 
 - 打开新标签页时进入 TabDock。
 - 能创建、切换、重命名、删除 space。
+- 能拖拽调整 space 顺序并刷新后保持。
 - 能创建、重命名、删除、拖拽排序 stack。
 - 能从右侧 open tab 拖入 stack 并保存。
 - 能拖动 block 标题创建包含整个 window tabs 的 stack。
 - 能在 stack 内和 stack 间拖动 saved tab。
+- 能选择并批量删除单个 stack 内的 saved tabs。
 - 同一 space 内同 URL 不重复保存。
 - 点击 saved tab 时，已打开则切换，未打开则新开。
 - 搜索能找到 saved spaces、stacks、tabs、open tabs 和近 90 天 history。
+- 应用内快捷键和 Chrome 全局快捷键能打开搜索，搜索输入框立即聚焦。
+- 普通网页全局搜索 overlay 能搜索并打开结果，键盘事件不透传到原页面。
+- 右侧 open tabs 面板能折叠/展开，window block 能折叠/展开。
+- 能关闭单个 open tab、关闭整个 window、移动 open tab 到另一个 window。
+- 能关闭重复 open tabs，并保留当前活跃 TabDock tab。
+- 能导出 JSON、导入 JSON、拒绝无效 JSON、授权本地备份目录、写入和恢复 `latest.json`。
 - Chrome 禁止访问的页面不会导致页面崩溃。
 
 ### 6.2 测试场景
@@ -240,14 +364,23 @@ Unit tests：
 
 - Space/stack/tab reducer 或 store 操作。
 - URL 去重和移动策略。
+- Space 拖拽排序。
+- 批量删除 saved tabs。
 - 搜索结果分组和排序。
 - History 时间范围过滤。
+- 本地状态 schema 序列化、导入校验、旧数据归一化。
+- 快捷键标准化和匹配。
+- 本地备份目录授权状态、读写、恢复失败路径。
 
 Integration tests：
 
 - Mock Chrome APIs 验证 tabs/windows/history/storage 调用。
 - Meta description 读取失败时降级。
 - Storage 写入后刷新恢复顺序。
+- Chrome commands 全局搜索、runtime message、搜索结果跳转。
+- Open tabs 列表订阅 tabs create/update/remove 后刷新。
+- 关闭 tab/window、移动 tab 到 window、重复 tab 清理。
+- JSON 导入导出和 File System Access API 备份。
 
 E2E tests：
 
@@ -257,11 +390,18 @@ E2E tests：
 - 拖动 tab 跨 stack。
 - 搜索并打开 saved tab/open tab/history。
 - 删除 stack/space 的确认流程。
+- Space 拖拽排序。
+- Stack 内 saved tabs 批量删除。
+- Open tabs 面板折叠、window block 折叠、sticky 标题和滚动行为。
+- 全局快捷键打开搜索并立即输入。
+- 全局搜索 overlay 阻止键盘事件透传。
+- 导出、导入、无效导入、本地目录自动备份。
+- Open tabs 关闭、移动和去重流程。
 
 ## 7. 假设与默认决策
 
-- 当前目录为空仓库，后续实现会从 Chrome Extension 项目脚手架开始。
+- 当前实现基于 React、TypeScript、Vite 和 Chrome Extension Manifest V3。
 - MVP 只支持当前 Chrome Profile；普通扩展无法稳定跨 Profile 或跨浏览器实例读取 tabs。
 - Saved tab 是扩展自己的本地数据，不写入 Chrome bookmarks。
-- 用户接受为了批量读取 meta description 而申请较宽的页面访问权限。
+- 当前较宽的 host permissions 已用于全局搜索 overlay 注入；后续批量读取 `meta description` 也会复用该权限。
 - 第一版不实现 Smart Stack 自动分类，但 UI 可以预留未来入口。
