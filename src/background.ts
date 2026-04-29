@@ -44,7 +44,10 @@ const openGlobalSearch = async (api: ChromeLike): Promise<void> => {
   }
 
   if (isTabManagerUrl(activeTab.url, api.runtime?.id)) {
-    await api.tabs?.update?.(activeTab.id, { active: true, url: buildTabManagerUrl(api, { search: "1" }) });
+    const openedSearch = await openSearchInTabManager(api);
+    if (!openedSearch) {
+      await api.tabs?.update?.(activeTab.id, { active: true, url: buildTabManagerUrl(api, { search: "1" }) });
+    }
     return;
   }
 
@@ -55,6 +58,15 @@ const openGlobalSearch = async (api: ChromeLike): Promise<void> => {
     });
   } catch {
     await focusOrOpenTabManager(api, { search: "1" });
+  }
+};
+
+const openSearchInTabManager = async (api: ChromeLike): Promise<boolean> => {
+  try {
+    const response = await api.runtime?.sendMessage?.({ type: "tab-manager:open-search-modal" });
+    return Boolean((response as { ok?: unknown } | undefined)?.ok);
+  } catch {
+    return false;
   }
 };
 

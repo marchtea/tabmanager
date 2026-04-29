@@ -364,6 +364,62 @@ test.describe("TabDock newtab MVP", () => {
   test("opens search with the global Chrome shortcut inside the app", async ({ page }) => {
     await page.keyboard.press(process.platform === "darwin" ? "Meta+Shift+K" : "Control+Shift+K");
     await expect(page.getByTestId("search-modal")).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "搜索 spaces、stacks、tabs、history" })).toBeFocused();
+  });
+
+  test("types into search immediately after opening it with the shortcut", async ({ page }) => {
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+Shift+K" : "Control+Shift+K");
+    await page.keyboard.type("React");
+
+    await expect(page.getByRole("textbox", { name: "搜索 spaces、stacks、tabs、history" })).toHaveValue("React");
+    await expect(page.getByTestId("search-result")).toContainText("React");
+  });
+
+  test("opens focused search from the Chrome command message", async ({ page }) => {
+    await page.addInitScript(() => {
+      const runtimeListeners: Array<(message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => void> = [];
+      Object.defineProperty(window, "chrome", {
+        configurable: true,
+        value: {
+          runtime: {
+            id: "abc",
+            onMessage: {
+              addListener: (listener: (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => void) => {
+                runtimeListeners.push(listener);
+              },
+              removeListener: (listener: (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => void) => {
+                const index = runtimeListeners.indexOf(listener);
+                if (index >= 0) {
+                  runtimeListeners.splice(index, 1);
+                }
+              }
+            }
+          },
+          storage: {
+            local: {
+              get: async () => ({}),
+              set: async () => undefined
+            }
+          }
+        }
+      });
+      Object.assign(window, { __TABDOCK_RUNTIME_LISTENERS__: runtimeListeners });
+    });
+    await page.goto("/");
+    await expect(page.getByTestId("tab-manager-shell")).toBeVisible();
+
+    await page.evaluate(() => {
+      const listeners = (window as unknown as {
+        __TABDOCK_RUNTIME_LISTENERS__: Array<(message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => void>;
+      }).__TABDOCK_RUNTIME_LISTENERS__;
+      for (const listener of listeners) {
+        listener({ type: "tab-manager:open-search-modal" }, {}, () => undefined);
+      }
+    });
+    await page.keyboard.type("React");
+
+    await expect(page.getByRole("textbox", { name: "搜索 spaces、stacks、tabs、history" })).toBeFocused();
+    await expect(page.getByRole("textbox", { name: "搜索 spaces、stacks、tabs、history" })).toHaveValue("React");
   });
 
   test("exports a JSON backup from settings", async ({ page }) => {

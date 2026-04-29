@@ -2,9 +2,9 @@ import { normalizeUrl } from "../domain/workspaceStore";
 import { buildSearchGroups } from "../domain/search";
 import { DEFAULT_GLOBAL_SEARCH_SHORTCUT, defaultSettings, normalizeSettings, normalizeShortcut } from "../domain/settings";
 import type { HistoryEntry, OpenTab, OpenTabBlock, SearchGroups, SearchResult, TabManagerSettings, WorkspaceState } from "../domain/types";
-import { emptyWorkspaceState, normalizeWorkspaceState } from "../domain/workspaceStore";
+import { emptyWorkspaceState, mergeWorkspaceStateChanges, normalizeWorkspaceState } from "../domain/workspaceStore";
 import { createLocalState, isWorkspaceState, normalizeLocalState, type TabDockLocalStateV1 } from "../domain/persistence";
-import type { ChromeHistoryRecord, ChromeLike, ChromeTabRecord } from "./chromeTypes";
+import type { ChromeHistoryRecord, ChromeLike, ChromeStorageChange, ChromeTabRecord } from "./chromeTypes";
 
 const STORAGE_KEY = "tabManagerWorkspace";
 const SETTINGS_STORAGE_KEY = "tabManagerSettings";
@@ -317,11 +317,37 @@ export const loadLocalState = async (chromeApi: ChromeLike | undefined): Promise
 export const saveLocalState = async (
   chromeApi: ChromeLike | undefined,
   workspace: WorkspaceState,
-  settings: TabManagerSettings
+  settings: TabManagerSettings,
+  mergeBase?: TabDockLocalStateV1
 ): Promise<TabDockLocalStateV1> => {
-  const state = createLocalState(workspace, settings, () => Date.now());
+  const latestState = mergeBase && chromeApi ? await loadLocalState(chromeApi) : undefined;
+  const state = createLocalState(
+    latestState && mergeBase
+      ? mergeWorkspaceStateChanges(mergeBase.workspace, workspace, latestState.workspace)
+      : workspace,
+    latestState && mergeBase && isEqual(settings, mergeBase.settings) ? latestState.settings : settings,
+    () => Date.now()
+  );
   await chromeApi?.storage?.local?.set?.({ [LOCAL_STATE_STORAGE_KEY]: state });
   return state;
+};
+
+export const subscribeToLocalStateChanges = (
+  chromeApi: ChromeLike | undefined,
+  onChange: (state: TabDockLocalStateV1) => void
+): (() => void) => {
+  const listener = (changes: Record<string, ChromeStorageChange>, areaName: string) => {
+    if (areaName !== "local") {
+      return;
+    }
+    const state = normalizeLocalState(changes[LOCAL_STATE_STORAGE_KEY]?.newValue);
+    if (state) {
+      onChange(state);
+    }
+  };
+
+  chromeApi?.storage?.onChanged?.addListener?.(listener);
+  return () => chromeApi?.storage?.onChanged?.removeListener?.(listener);
 };
 
 export const getGlobalSearchShortcut = async (chromeApi: ChromeLike | undefined): Promise<string> => {
@@ -366,3 +392,5 @@ const mapHistoryRecord = (record: ChromeHistoryRecord): HistoryEntry[] => {
     }
   ];
 };
+
+const isEqual = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);

@@ -40,12 +40,24 @@ export type ChromeMessageSender = {
   tab?: ChromeTabRecord;
 };
 
+export type ChromeStorageChange = {
+  oldValue?: unknown;
+  newValue?: unknown;
+};
+
 export type ChromeLike = {
   runtime?: {
     id?: string;
     getURL?: (path: string) => string;
     onMessage?: {
       addListener?: (
+        listener: (
+          message: unknown,
+          sender: ChromeMessageSender,
+          sendResponse: (response?: unknown) => void
+        ) => boolean | void
+      ) => void;
+      removeListener?: (
         listener: (
           message: unknown,
           sender: ChromeMessageSender,
@@ -106,6 +118,14 @@ export type ChromeLike = {
     local?: {
       get?: (keys: string[]) => Promise<Record<string, unknown>>;
       set?: (items: Record<string, unknown>) => Promise<void>;
+    };
+    onChanged?: {
+      addListener?: (
+        listener: (changes: Record<string, ChromeStorageChange>, areaName: string) => void
+      ) => void;
+      removeListener?: (
+        listener: (changes: Record<string, ChromeStorageChange>, areaName: string) => void
+      ) => void;
     };
   };
 };

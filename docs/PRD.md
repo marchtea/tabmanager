@@ -57,6 +57,7 @@ MVP 已实现目标：
 - Open Tabs 面板支持折叠、刷新、窗口 block 折叠、关闭 tab/window、重复 tab 清理、跨 window 移动 tab。
 - 数据管理支持 JSON 导出、JSON 导入替换、授权本地目录、自动写入 `latest.json`、从 `latest.json` 恢复。
 - 全局搜索支持 Chrome command、普通网页 overlay、TabDock 页面内搜索弹窗复用。
+- 多个 TabDock 新标签页同时打开时，页面会监听本地存储变化并刷新 workspace/settings；并发保存会合并较新的持久化状态，避免新增 Space、Stack、Saved Tab 相互覆盖。
 
 ## 3. 功能需求
 
@@ -224,6 +225,10 @@ Open Tabs 操作：
 ### 4.1 本地数据模型
 
 本地使用 `chrome.storage.local` 保存 `TabDockLocalStateV1`。旧版 `tabManagerWorkspace` 和 `tabManagerSettings` 读取时会被归一化为新版状态。
+
+TabDock 页面订阅 `chrome.storage.onChanged`；其他页面写入新版本地状态后，当前页面必须同步 workspace/settings，且由远端同步触发的本地 state 更新不得再次回写形成循环。
+
+保存 workspace/settings 时，如果当前页面基于旧快照修改，而 `chrome.storage.local` 中已有更新快照，必须以页面加载或上次同步的快照为 base 做三方合并，再写入新版本地状态。JSON 导入和从本地备份恢复仍是全量替换。
 
 ```ts
 type TabDockLocalStateV1 = {

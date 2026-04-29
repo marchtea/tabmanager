@@ -14,6 +14,10 @@ export type GlobalSearchOpenManagerMessage = {
   type: "tab-manager:global-search-open-manager";
 };
 
+export type OpenSearchModalMessage = {
+  type: "tab-manager:open-search-modal";
+};
+
 export type GlobalSearchMessage =
   | GlobalSearchQueryMessage
   | GlobalSearchPickMessage

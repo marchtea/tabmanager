@@ -21,9 +21,11 @@ import {
   saveSettings,
   saveWorkspace,
   searchRecentHistory,
+  subscribeToLocalStateChanges,
   subscribeToOpenTabsChanges
 } from "./chromeApi";
 import type { ChromeLike } from "./chromeTypes";
+import type { TabDockLocalStateV1 } from "../domain/persistence";
 
 describe("chrome api adapter", () => {
   it("groups open tabs by window and excludes the TabDock page itself", async () => {
@@ -513,6 +515,101 @@ describe("chrome api adapter", () => {
     expect(chrome.storage.local.set).toHaveBeenLastCalledWith({
       "tabdock:local-state:v1": expect.objectContaining({ settings: { appSearchShortcut: "Ctrl+K" } })
     });
+  });
+
+  it("merges local state saves with newer storage data from another page", async () => {
+    const baseState = {
+      format: "tabdock.local-state",
+      schemaVersion: 1,
+      updatedAt: 1,
+      workspace: { spaceIds: [], spaces: {}, stacks: {}, tabs: {} },
+      settings: { appSearchShortcut: "Ctrl+K" }
+    } satisfies TabDockLocalStateV1;
+    const remoteWorkspace = {
+      spaceIds: ["space-remote"],
+      spaces: {
+        "space-remote": { id: "space-remote", name: "Remote", stackIds: [], createdAt: 2, updatedAt: 2 }
+      },
+      stacks: {},
+      tabs: {},
+      activeSpaceId: "space-remote"
+    };
+    const localWorkspace = {
+      spaceIds: ["space-local"],
+      spaces: {
+        "space-local": { id: "space-local", name: "Local", stackIds: [], createdAt: 3, updatedAt: 3 }
+      },
+      stacks: {},
+      tabs: {},
+      activeSpaceId: "space-local"
+    };
+    const chrome = {
+      storage: {
+        local: {
+          get: vi.fn().mockResolvedValue({
+            "tabdock:local-state:v1": {
+              ...baseState,
+              updatedAt: 4,
+              workspace: remoteWorkspace,
+              settings: { appSearchShortcut: "Ctrl+Shift+K" }
+            }
+          }),
+          set: vi.fn().mockResolvedValue(undefined)
+        }
+      }
+    } satisfies ChromeLike;
+
+    await saveLocalState(chrome, localWorkspace, baseState.settings, baseState);
+
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({
+      "tabdock:local-state:v1": expect.objectContaining({
+        workspace: expect.objectContaining({
+          spaceIds: ["space-local", "space-remote"],
+          spaces: expect.objectContaining({
+            "space-local": expect.objectContaining({ name: "Local" }),
+            "space-remote": expect.objectContaining({ name: "Remote" })
+          })
+        }),
+        settings: { appSearchShortcut: "Ctrl+Shift+K" }
+      })
+    });
+  });
+
+  it("subscribes to versioned local state changes", () => {
+    let listener: ((changes: Record<string, { newValue?: unknown }>, areaName: string) => void) | undefined;
+    const onChange = vi.fn();
+    const chrome = {
+      storage: {
+        onChanged: {
+          addListener: vi.fn((nextListener) => {
+            listener = nextListener;
+          }),
+          removeListener: vi.fn()
+        }
+      }
+    } satisfies ChromeLike;
+    const unsubscribe = subscribeToLocalStateChanges(chrome, onChange);
+
+    listener?.(
+      {
+        "tabdock:local-state:v1": {
+          newValue: {
+            format: "tabdock.local-state",
+            schemaVersion: 1,
+            updatedAt: 123,
+            workspace: { spaceIds: [], spaces: {}, stacks: {}, tabs: {} },
+            settings: { appSearchShortcut: "Ctrl+K" }
+          }
+        }
+      },
+      "local"
+    );
+    listener?.({ "tabdock:local-state:v1": { newValue: undefined } }, "sync");
+    unsubscribe();
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ updatedAt: 123 }));
+    expect(chrome.storage.onChanged.removeListener).toHaveBeenCalled();
   });
 
   it("builds global search groups and dispatches picked results", async () => {

@@ -431,6 +431,72 @@ export const normalizeWorkspaceState = (state: WorkspaceState): WorkspaceState =
   };
 };
 
+export const mergeWorkspaceStateChanges = (
+  base: WorkspaceState,
+  local: WorkspaceState,
+  remote: WorkspaceState
+): WorkspaceState => {
+  const normalizedBase = normalizeWorkspaceState(base);
+  const normalizedLocal = normalizeWorkspaceState(local);
+  const normalizedRemote = normalizeWorkspaceState(remote);
+  const spaces = mergeEntityRecords(normalizedBase.spaces, normalizedLocal.spaces, normalizedRemote.spaces);
+  const stacks = mergeEntityRecords(normalizedBase.stacks, normalizedLocal.stacks, normalizedRemote.stacks);
+  const tabs = mergeEntityRecords(normalizedBase.tabs, normalizedLocal.tabs, normalizedRemote.tabs);
+  const validSpaceIds = new Set(Object.keys(spaces));
+
+  const validStacks = Object.fromEntries(
+    Object.entries(stacks).filter(([, stack]) => validSpaceIds.has(stack.spaceId))
+  );
+  const validStackIds = new Set(Object.keys(validStacks));
+  const validTabs = Object.fromEntries(
+    Object.entries(tabs).filter(([, tab]) => validSpaceIds.has(tab.spaceId) && validStackIds.has(tab.stackId))
+  );
+  const validTabIds = new Set(Object.keys(validTabs));
+
+  const mergedSpaces = Object.fromEntries(
+    Object.entries(spaces).map(([spaceId, space]) => [
+      spaceId,
+      {
+        ...space,
+        stackIds: mergeOrderedIds(
+          normalizedBase.spaces[spaceId]?.stackIds ?? [],
+          normalizedLocal.spaces[spaceId]?.stackIds ?? [],
+          normalizedRemote.spaces[spaceId]?.stackIds ?? [],
+          (stackId) => validStacks[stackId]?.spaceId === spaceId
+        )
+      }
+    ])
+  );
+  const mergedStacks = Object.fromEntries(
+    Object.entries(validStacks).map(([stackId, stack]) => [
+      stackId,
+      {
+        ...stack,
+        tabIds: mergeOrderedIds(
+          normalizedBase.stacks[stackId]?.tabIds ?? [],
+          normalizedLocal.stacks[stackId]?.tabIds ?? [],
+          normalizedRemote.stacks[stackId]?.tabIds ?? [],
+          (tabId) => validTabIds.has(tabId) && validTabs[tabId]?.stackId === stackId
+        )
+      }
+    ])
+  );
+
+  const activeSpaceId = pickActiveSpaceId(normalizedBase, normalizedLocal, normalizedRemote, validSpaceIds);
+  return normalizeWorkspaceState({
+    spaceIds: mergeOrderedIds(
+      normalizedBase.spaceIds,
+      normalizedLocal.spaceIds,
+      normalizedRemote.spaceIds,
+      (spaceId) => validSpaceIds.has(spaceId)
+    ),
+    spaces: mergedSpaces,
+    stacks: mergedStacks,
+    tabs: validTabs,
+    ...(activeSpaceId ? { activeSpaceId } : {})
+  });
+};
+
 const findTabByUrlInSpace = (
   state: WorkspaceState,
   spaceId: string,
@@ -479,3 +545,81 @@ const insertId = (ids: string[], id: string, targetIndex: number): string[] => {
   const index = Math.max(0, Math.min(targetIndex, nextIds.length));
   return [...nextIds.slice(0, index), id, ...nextIds.slice(index)];
 };
+
+const mergeEntityRecords = <T extends { id: string; updatedAt: number }>(
+  base: Record<string, T>,
+  local: Record<string, T>,
+  remote: Record<string, T>
+): Record<string, T> => {
+  const ids = new Set([...Object.keys(base), ...Object.keys(local), ...Object.keys(remote)]);
+  const entries = [...ids].flatMap((id): Array<[string, T]> => {
+    const baseEntity = base[id];
+    const localEntity = local[id];
+    const remoteEntity = remote[id];
+    const merged = mergeEntity(baseEntity, localEntity, remoteEntity);
+    return merged ? [[id, merged]] : [];
+  });
+  return Object.fromEntries(entries);
+};
+
+const mergeEntity = <T extends { updatedAt: number }>(
+  baseEntity: T | undefined,
+  localEntity: T | undefined,
+  remoteEntity: T | undefined
+): T | undefined => {
+  if (!baseEntity) {
+    if (localEntity && remoteEntity) {
+      return localEntity.updatedAt >= remoteEntity.updatedAt ? localEntity : remoteEntity;
+    }
+    return localEntity ?? remoteEntity;
+  }
+
+  const localChanged = !isEqual(localEntity, baseEntity);
+  const remoteChanged = !isEqual(remoteEntity, baseEntity);
+
+  if (!localEntity && !remoteEntity) {
+    return undefined;
+  }
+  if (!localEntity) {
+    return remoteChanged ? remoteEntity : undefined;
+  }
+  if (!remoteEntity) {
+    return localChanged ? localEntity : undefined;
+  }
+  if (!localChanged) {
+    return remoteEntity;
+  }
+  if (!remoteChanged) {
+    return localEntity;
+  }
+  return localEntity.updatedAt >= remoteEntity.updatedAt ? localEntity : remoteEntity;
+};
+
+const mergeOrderedIds = (
+  baseIds: string[],
+  localIds: string[],
+  remoteIds: string[],
+  isValid: (id: string) => boolean
+): string[] => {
+  const localChanged = !isEqual(localIds, baseIds);
+  const remoteChanged = !isEqual(remoteIds, baseIds);
+  const primaryIds = localChanged ? localIds : remoteChanged ? remoteIds : baseIds;
+  const secondaryIds = localChanged ? remoteIds : localIds;
+  return uniqueIds([...primaryIds, ...secondaryIds, ...baseIds]).filter(isValid);
+};
+
+const uniqueIds = (ids: string[]): string[] => [...new Set(ids)];
+
+const pickActiveSpaceId = (
+  base: WorkspaceState,
+  local: WorkspaceState,
+  remote: WorkspaceState,
+  validSpaceIds: ReadonlySet<string>
+): string | undefined => {
+  const localChanged = local.activeSpaceId !== base.activeSpaceId;
+  const remoteChanged = remote.activeSpaceId !== base.activeSpaceId;
+  const activeSpaceId = localChanged ? local.activeSpaceId : remoteChanged ? remote.activeSpaceId : remote.activeSpaceId ?? local.activeSpaceId;
+  return activeSpaceId && validSpaceIds.has(activeSpaceId) ? activeSpaceId : undefined;
+};
+
+const isEqual = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);

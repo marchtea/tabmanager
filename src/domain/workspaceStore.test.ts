@@ -9,6 +9,7 @@ import {
   emptyWorkspaceState,
   getActiveSpace,
   getOrderedSpaces,
+  mergeWorkspaceStateChanges,
   moveSavedTab,
   moveSpace,
   moveStack,
@@ -339,6 +340,54 @@ describe("workspace store", () => {
     expect(moved.spaceIds).toEqual(["space-a", "space-c", "space-b"]);
     expect(getOrderedSpaces(moved).map((space) => space.name)).toEqual(["A", "C", "B"]);
     expect(normalized.spaceIds).toEqual(["space-c", "space-a", "space-b"]);
+  });
+
+  it("merges concurrent workspace additions from multiple TabDock pages", () => {
+    const base = emptyWorkspaceState();
+    const local = createSpace(base, "Local", () => 10, () => "space-local");
+    const remote = createSpace(base, "Remote", () => 20, () => "space-remote");
+
+    const merged = mergeWorkspaceStateChanges(base, local, remote);
+
+    expect(merged.spaceIds).toEqual(["space-local", "space-remote"]);
+    expect(merged.spaces["space-local"].name).toBe("Local");
+    expect(merged.spaces["space-remote"].name).toBe("Remote");
+    expect(merged.activeSpaceId).toBe("space-local");
+  });
+
+  it("merges concurrent stacks and tabs without dropping remote records", () => {
+    let base = emptyWorkspaceState();
+    base = createSpace(base, "Research", () => 1, () => "space-1");
+
+    let local = createStack(base, "space-1", "Local Stack", () => 10, () => "stack-local");
+    local = saveOpenTabToStack(
+      local,
+      "space-1",
+      "stack-local",
+      { id: 1, windowId: 1, title: "Local Tab", url: "https://local.test" },
+      0,
+      () => 11,
+      () => "tab-local"
+    );
+
+    let remote = createStack(base, "space-1", "Remote Stack", () => 20, () => "stack-remote");
+    remote = saveOpenTabToStack(
+      remote,
+      "space-1",
+      "stack-remote",
+      { id: 2, windowId: 1, title: "Remote Tab", url: "https://remote.test" },
+      0,
+      () => 21,
+      () => "tab-remote"
+    );
+
+    const merged = mergeWorkspaceStateChanges(base, local, remote);
+
+    expect(merged.spaces["space-1"].stackIds).toEqual(["stack-local", "stack-remote"]);
+    expect(merged.stacks["stack-local"].tabIds).toEqual(["tab-local"]);
+    expect(merged.stacks["stack-remote"].tabIds).toEqual(["tab-remote"]);
+    expect(merged.tabs["tab-local"].title).toBe("Local Tab");
+    expect(merged.tabs["tab-remote"].title).toBe("Remote Tab");
   });
 
   it("normalizes browser and fallback URLs", () => {

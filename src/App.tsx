@@ -11,6 +11,7 @@ import {
   moveOpenTabToWindow,
   saveLocalState,
   searchRecentHistory,
+  subscribeToLocalStateChanges,
   subscribeToOpenTabsChanges
 } from "./chrome/chromeApi";
 import {
@@ -130,6 +131,9 @@ export const App = () => {
   const [tabSelectionStackId, setTabSelectionStackId] = useState<string>();
   const [selectedSavedTabIds, setSelectedSavedTabIds] = useState<ReadonlySet<string>>(() => new Set());
   const didHandleInitialUrlRef = useRef(false);
+  const latestLocalStateRef = useRef<TabDockLocalStateV1 | undefined>(undefined);
+  const skipNextLocalStateSaveRef = useRef(false);
+  const forceNextLocalStateSaveRef = useRef(false);
   const scrollbarRevealTimersRef = useRef(new Map<HTMLElement, number>());
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -185,6 +189,7 @@ export const App = () => {
           .catch(() => DEFAULT_GLOBAL_SEARCH_SHORTCUT),
         getBackupDirectoryStatus()
       ]);
+      latestLocalStateRef.current = savedState;
       setWorkspace(savedState.workspace);
       setSettings(savedState.settings);
       setGlobalSearchShortcut(savedGlobalShortcut);
@@ -193,6 +198,29 @@ export const App = () => {
     };
     void load();
   }, [chromeApi]);
+
+  useEffect(() => {
+    if (!loaded) {
+      return;
+    }
+
+    return subscribeToLocalStateChanges(chromeApi, (state) => {
+      const currentState = latestLocalStateRef.current;
+      if (
+        currentState &&
+        isEqual(state.workspace, currentState.workspace) &&
+        isEqual(state.settings, currentState.settings)
+      ) {
+        latestLocalStateRef.current = state;
+        return;
+      }
+
+      latestLocalStateRef.current = state;
+      skipNextLocalStateSaveRef.current = true;
+      setWorkspace(state.workspace);
+      setSettings(state.settings);
+    });
+  }, [chromeApi, loaded]);
 
   useEffect(() => {
     if (!loaded) {
@@ -239,7 +267,35 @@ export const App = () => {
     if (!loaded) {
       return;
     }
-    void saveLocalState(chromeApi, workspace, settings);
+
+    if (skipNextLocalStateSaveRef.current) {
+      skipNextLocalStateSaveRef.current = false;
+      return;
+    }
+
+    const latestState = latestLocalStateRef.current;
+    if (
+      latestState &&
+      isEqual(workspace, latestState.workspace) &&
+      isEqual(settings, latestState.settings)
+    ) {
+      return;
+    }
+
+    const mergeBase = forceNextLocalStateSaveRef.current ? undefined : latestState;
+    forceNextLocalStateSaveRef.current = false;
+
+    void saveLocalState(chromeApi, workspace, settings, mergeBase).then((savedState) => {
+      latestLocalStateRef.current = savedState;
+      if (!isEqual(savedState.workspace, workspace)) {
+        skipNextLocalStateSaveRef.current = true;
+        setWorkspace(savedState.workspace);
+      }
+      if (!isEqual(savedState.settings, settings)) {
+        skipNextLocalStateSaveRef.current = true;
+        setSettings(savedState.settings);
+      }
+    });
   }, [chromeApi, loaded, settings, workspace]);
 
   useEffect(() => {
@@ -276,6 +332,31 @@ export const App = () => {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [globalSearchShortcut]);
+
+  useEffect(() => {
+    if (!chromeApi?.runtime?.onMessage?.addListener) {
+      return;
+    }
+
+    const onMessage = (message: unknown, _sender: unknown, sendResponse: (response?: unknown) => void) => {
+      if (
+        !message ||
+        typeof message !== "object" ||
+        (message as { type?: unknown }).type !== "tab-manager:open-search-modal" ||
+        document.visibilityState !== "visible"
+      ) {
+        return false;
+      }
+
+      window.focus();
+      setIsSearchOpen(true);
+      sendResponse({ ok: true });
+      return false;
+    };
+
+    chromeApi.runtime.onMessage.addListener(onMessage);
+    return () => chromeApi.runtime?.onMessage?.removeListener?.(onMessage);
+  }, [chromeApi]);
 
   useEffect(() => {
     if (!loaded || didHandleInitialUrlRef.current) {
@@ -415,6 +496,7 @@ export const App = () => {
 
   const applyImportedState = (state: TabDockLocalStateV1) => {
     clearSavedTabSelection();
+    forceNextLocalStateSaveRef.current = true;
     setWorkspace(state.workspace);
     setSettings(state.settings);
     setDataStatus("已导入数据。");
@@ -1203,6 +1285,8 @@ const formatBackupStatus = (status: BackupDirectoryStatus): string => {
   return "未授权";
 };
 
+const isEqual = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);
+
 const SearchModal = ({
   flatResults,
   groups,
@@ -1221,43 +1305,65 @@ const SearchModal = ({
   selectedIndex: number;
   setQuery: (value: string) => void;
   setSelectedIndex: (value: number) => void;
-}) => (
-  <div className="search-backdrop" onMouseDown={onClose}>
-    <section className="search-modal" data-testid="search-modal" onMouseDown={(event) => event.stopPropagation()}>
-      <input
-        autoFocus
-        placeholder="搜索 spaces、stacks、tabs、history"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown") {
-            event.preventDefault();
-            setSelectedIndex(Math.min(selectedIndex + 1, Math.max(flatResults.length - 1, 0)));
-          }
-          if (event.key === "ArrowUp") {
-            event.preventDefault();
-            setSelectedIndex(Math.max(selectedIndex - 1, 0));
-          }
-          if (event.key === "Enter" && flatResults[selectedIndex]) {
-            event.preventDefault();
-            onPick(flatResults[selectedIndex]);
-          }
-          if (event.key === "Escape") {
-            onClose();
-          }
-        }}
-      />
-      <div className="result-groups">
-        {renderGroup("Spaces", groups.spaces, flatResults, selectedIndex, onPick)}
-        {renderGroup("Stacks", groups.stacks, flatResults, selectedIndex, onPick)}
-        {renderGroup("Saved Tabs", groups.savedTabs, flatResults, selectedIndex, onPick)}
-        {renderGroup("Open Tabs", groups.openTabs, flatResults, selectedIndex, onPick)}
-        {renderGroup("History", groups.history, flatResults, selectedIndex, onPick)}
-        {flatResults.length === 0 && <p className="no-results">没有结果</p>}
-      </div>
-    </section>
-  </div>
-);
+}) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const focusInput = () => inputRef.current?.focus({ preventScroll: true });
+    focusInput();
+
+    const focusTimers = [50, 150, 300, 600].map((delay) => window.setTimeout(focusInput, delay));
+    window.addEventListener("focus", focusInput);
+    document.addEventListener("visibilitychange", focusInput);
+
+    return () => {
+      for (const timer of focusTimers) {
+        window.clearTimeout(timer);
+      }
+      window.removeEventListener("focus", focusInput);
+      document.removeEventListener("visibilitychange", focusInput);
+    };
+  }, []);
+
+  return (
+    <div className="search-backdrop" onMouseDown={onClose}>
+      <section className="search-modal" data-testid="search-modal" onMouseDown={(event) => event.stopPropagation()}>
+        <input
+          ref={inputRef}
+          autoFocus
+          placeholder="搜索 spaces、stacks、tabs、history"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setSelectedIndex(Math.min(selectedIndex + 1, Math.max(flatResults.length - 1, 0)));
+            }
+            if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setSelectedIndex(Math.max(selectedIndex - 1, 0));
+            }
+            if (event.key === "Enter" && flatResults[selectedIndex]) {
+              event.preventDefault();
+              onPick(flatResults[selectedIndex]);
+            }
+            if (event.key === "Escape") {
+              onClose();
+            }
+          }}
+        />
+        <div className="result-groups">
+          {renderGroup("Spaces", groups.spaces, flatResults, selectedIndex, onPick)}
+          {renderGroup("Stacks", groups.stacks, flatResults, selectedIndex, onPick)}
+          {renderGroup("Saved Tabs", groups.savedTabs, flatResults, selectedIndex, onPick)}
+          {renderGroup("Open Tabs", groups.openTabs, flatResults, selectedIndex, onPick)}
+          {renderGroup("History", groups.history, flatResults, selectedIndex, onPick)}
+          {flatResults.length === 0 && <p className="no-results">没有结果</p>}
+        </div>
+      </section>
+    </div>
+  );
+};
 
 const renderGroup = (
   label: string,
