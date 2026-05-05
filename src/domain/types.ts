@@ -70,7 +70,8 @@ export type SearchResultKind =
   | "stack"
   | "saved-tab"
   | "open-tab"
-  | "history";
+  | "history"
+  | "google-search";
 
 export type SearchResult = {
   id: string;

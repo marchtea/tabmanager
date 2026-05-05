@@ -11,8 +11,10 @@ Before changing product behavior, read [docs/PRD.md](docs/PRD.md). Treat that PR
 - Search, Open Tabs panel, workspace, settings, import/export, and local backup behavior.
 - Acceptance criteria and expected test coverage.
 
-Keep this file brief. Do not restate detailed feature requirements here; update the PRD when product capability changes.
+Keep this file brief. Do not restate detailed feature requirements here.
 
 ## Product Change Rule
 
-When a commit changes product behavior, summarize the product capability changes in the commit/PR notes and update [docs/PRD.md](docs/PRD.md) in the same change so the PRD stays current.
+During iterative development, do not update [docs/PRD.md](docs/PRD.md) for every product behavior change.
+
+When the user asks to commit or prepare a PR, review the accumulated product behavior changes, update [docs/PRD.md](docs/PRD.md) once with the final behavior, and summarize those product capability changes in the commit/PR notes.

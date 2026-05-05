@@ -282,6 +282,33 @@ test.describe("TabDock newtab MVP", () => {
     await expect(stackByName(page, "Keyboard Stack")).toBeVisible();
   });
 
+  test("moves search selection with arrow keys and offers Google when empty", async ({ page }) => {
+    await createSpace(page, "Arrow Research");
+    await createStack(page, "Alpha Keyboard");
+    await createStack(page, "Beta Keyboard");
+
+    const searchInput = page.getByRole("textbox", { name: "搜索 spaces、stacks、tabs、history" });
+    await page.getByTestId("search-entry").click();
+    await searchInput.fill("Keyboard");
+    await expect(page.getByTestId("search-result")).toHaveCount(2);
+
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByTestId("search-result").nth(1)).toHaveClass(/is-selected/);
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("search-modal")).toHaveCount(0);
+    await expect(stackByName(page, "Beta Keyboard")).toBeVisible();
+
+    await page.getByTestId("search-entry").click();
+    await searchInput.fill("no local result query");
+    await expect(page.getByText("没有结果")).toBeVisible();
+    await expect(page.getByTestId("search-result")).toContainText("用 Google 搜索");
+
+    const popupPromise = page.waitForEvent("popup");
+    await page.keyboard.press("Enter");
+    const popup = await popupPromise;
+    await expect(popup).toHaveURL(/google\.com\/search\?q=no%20local%20result%20query/);
+  });
+
   test("keeps the app shell pinned when selecting a stack from the sidebar", async ({ page }) => {
     await createSpace(page, "Pinned Research");
     await createStack(page, "Primary Reading");

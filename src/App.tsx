@@ -148,7 +148,8 @@ export const App = () => {
     () => buildSearchGroups(query, workspace, openBlocks, historyEntries, now()),
     [historyEntries, openBlocks, query, workspace]
   );
-  const flatResults = flattenSearchGroups(searchGroups);
+  const localSearchResults = flattenSearchGroups(searchGroups);
+  const flatResults = getSearchResultsWithGoogleFallback(query, localSearchResults);
 
   const revealTransientScrollbar = useCallback((event: React.UIEvent<HTMLElement>) => {
     const scrollContainer = event.currentTarget;
@@ -480,7 +481,13 @@ export const App = () => {
       setActiveSpace(result.spaceId);
       scrollStackIntoView(result.stackId);
     }
-    if ((result.kind === "saved-tab" || result.kind === "open-tab" || result.kind === "history") && result.url) {
+    if (
+      (result.kind === "saved-tab" ||
+        result.kind === "open-tab" ||
+        result.kind === "history" ||
+        result.kind === "google-search") &&
+      result.url
+    ) {
       await openUrl(result.url);
     }
     setIsSearchOpen(false);
@@ -1151,6 +1158,7 @@ export const App = () => {
         <SearchModal
           flatResults={flatResults}
           groups={searchGroups}
+          hasLocalResults={localSearchResults.length > 0}
           onClose={() => setIsSearchOpen(false)}
           onPick={(result) => void handleResult(result)}
           query={query}
@@ -1290,6 +1298,7 @@ const isEqual = (left: unknown, right: unknown): boolean => JSON.stringify(left)
 const SearchModal = ({
   flatResults,
   groups,
+  hasLocalResults,
   onClose,
   onPick,
   query,
@@ -1299,6 +1308,7 @@ const SearchModal = ({
 }: {
   flatResults: SearchResult[];
   groups: SearchGroups;
+  hasLocalResults: boolean;
   onClose: () => void;
   onPick: (result: SearchResult) => void;
   query: string;
@@ -1324,6 +1334,19 @@ const SearchModal = ({
       document.removeEventListener("visibilitychange", focusInput);
     };
   }, []);
+
+  useEffect(() => {
+    if (selectedIndex > Math.max(flatResults.length - 1, 0)) {
+      setSelectedIndex(Math.max(flatResults.length - 1, 0));
+    }
+  }, [flatResults.length, selectedIndex, setSelectedIndex]);
+
+  useEffect(() => {
+    inputRef.current
+      ?.closest(".search-modal")
+      ?.querySelector(".is-selected")
+      ?.scrollIntoView({ block: "nearest" });
+  }, [selectedIndex]);
 
   return (
     <div className="search-backdrop" onMouseDown={onClose}>
@@ -1358,7 +1381,9 @@ const SearchModal = ({
           {renderGroup("Saved Tabs", groups.savedTabs, flatResults, selectedIndex, onPick)}
           {renderGroup("Open Tabs", groups.openTabs, flatResults, selectedIndex, onPick)}
           {renderGroup("History", groups.history, flatResults, selectedIndex, onPick)}
-          {flatResults.length === 0 && <p className="no-results">没有结果</p>}
+          {!hasLocalResults && query.trim() && <p className="no-results">没有结果</p>}
+          {renderGroup("Google", flatResults.filter((result) => result.kind === "google-search"), flatResults, selectedIndex, onPick)}
+          {flatResults.length === 0 && <p className="no-results">输入关键词开始搜索</p>}
         </div>
       </section>
     </div>
@@ -1490,6 +1515,26 @@ const flattenSearchGroups = (groups: SearchGroups): SearchResult[] => [
   ...groups.openTabs,
   ...groups.history
 ];
+
+const getSearchResultsWithGoogleFallback = (query: string, localResults: SearchResult[]): SearchResult[] => {
+  const trimmedQuery = query.trim();
+  if (localResults.length > 0 || !trimmedQuery) {
+    return localResults;
+  }
+
+  return [
+    {
+      id: `google-search:${trimmedQuery}`,
+      kind: "google-search",
+      title: `用 Google 搜索 "${trimmedQuery}"`,
+      subtitle: "没有 TabDock 结果",
+      url: buildGoogleSearchUrl(trimmedQuery)
+    }
+  ];
+};
+
+const buildGoogleSearchUrl = (query: string): string =>
+  `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 
 const moveOpenTabBetweenBlocks = (
   blocks: OpenTabBlock[],

@@ -400,8 +400,17 @@ describe("workspace store", () => {
     expect(normalizeUrl("https://t.bilibili.com/?tab=video&spm_id_from=333.1007.0.0")).toBe(
       "https://t.bilibili.com/?tab=video"
     );
-    expect(normalizeUrl("https://example.com/read?utm_source=x&utm_medium=y&id=42&fbclid=abc")).toBe(
+    expect(normalizeUrl("https://example.com/read?utm_source=x&utm_medium=y&id=42&fbclid=abc&_gl=ga")).toBe(
       "https://example.com/read?id=42"
+    );
+    expect(normalizeUrl("https://www.bilibili.com/video/BV1xx?vd_source=abc&from_spmid=main&p=2")).toBe(
+      "https://www.bilibili.com/video/BV1xx?p=2"
+    );
+    expect(normalizeUrl("https://youtu.be/abc123?si=share&feature=shared&t=30")).toBe(
+      "https://youtu.be/abc123?t=30"
+    );
+    expect(normalizeUrl("https://example.com/read?si=content&s=search&t=topic")).toBe(
+      "https://example.com/read?si=content&s=search&t=topic"
     );
   });
 });

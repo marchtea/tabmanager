@@ -85,6 +85,9 @@ MVP 已实现目标：
 - Saved Tabs：按 title、URL、description 搜索。
 - Open Tabs：按 title、URL 搜索；如果已有 description，则纳入搜索。
 - Chrome History：搜索近 90 天 history，按 title、URL 匹配。
+- 搜索词按空格拆分为多个关键词；所有关键词都需要在可搜索字段中模糊命中。
+- History 结果会清理常见追踪参数后展示和去重，减少同一页面因 `utm_*`、`vd_source`、`si` 等追踪参数产生的重复结果。
+- History 搜索会合并 Chrome 当前关键词搜索结果和近 30 天历史补充池，再由 TabDock 本地模糊匹配过滤，以补足 URL 中间/后缀关键词匹配。
 
 入口：
 
@@ -103,6 +106,7 @@ MVP 已实现目标：
 - 支持键盘上下选择和 Enter 打开。
 - 支持鼠标点击结果。
 - 打开后输入框必须立即聚焦，用户可直接输入。
+- 当没有 TabDock 本地结果时，展示 Google 搜索操作项；点击或按 Enter 会用当前关键词打开 Google 搜索。
 
 点击行为：
 

@@ -376,21 +376,37 @@ describe("chrome api adapter", () => {
     const now = Date.UTC(2026, 3, 18);
     const chrome = {
       history: {
-        search: vi.fn().mockResolvedValue([
-          { id: "h1", title: "Docs", url: "https://docs.test", lastVisitTime: now }
-        ])
+        search: vi.fn(async ({ text }: { text: string }) =>
+          text
+            ? [{ id: "h1", title: "Docs", url: "https://docs.test", lastVisitTime: now }]
+            : [
+                { id: "h2", title: "OwnVault", url: "https://github.com/marchtea/ownvault", lastVisitTime: now },
+                {
+                  id: "h3",
+                  title: "Docs Duplicate",
+                  url: "https://docs.test?utm_source=history",
+                  lastVisitTime: now
+                }
+              ]
+        )
       }
     } satisfies ChromeLike;
 
     const result = await searchRecentHistory(chrome, "docs", now, 10);
 
-    expect(chrome.history.search).toHaveBeenCalledWith({
+    expect(chrome.history.search).toHaveBeenNthCalledWith(1, {
       text: "docs",
       startTime: now - 90 * 24 * 60 * 60 * 1000,
       maxResults: 10
     });
+    expect(chrome.history.search).toHaveBeenNthCalledWith(2, {
+      text: "",
+      startTime: now - 30 * 24 * 60 * 60 * 1000,
+      maxResults: 10
+    });
     expect(result).toEqual([
-      { id: "h1", title: "Docs", url: "https://docs.test", lastVisitTime: now }
+      { id: "h1", title: "Docs", url: "https://docs.test", lastVisitTime: now },
+      { id: "h2", title: "OwnVault", url: "https://github.com/marchtea/ownvault", lastVisitTime: now }
     ]);
   });
 
@@ -650,6 +666,24 @@ describe("chrome api adapter", () => {
     expect(chrome.tabs.create).toHaveBeenCalledWith({
       url: "chrome-extension://abc/index.html?space=space-1"
     });
+  });
+
+  it("opens global Google search fallback results", async () => {
+    const chrome = {
+      tabs: {
+        query: vi.fn().mockResolvedValue([]),
+        create: vi.fn().mockResolvedValue({})
+      }
+    } satisfies ChromeLike;
+
+    await handleGlobalSearchResult(chrome, {
+      id: "google-search:no-match",
+      kind: "google-search",
+      title: "用 Google 搜索",
+      url: "https://www.google.com/search?q=no-match"
+    });
+
+    expect(chrome.tabs.create).toHaveBeenCalledWith({ url: "https://www.google.com/search?q=no-match" });
   });
 
   it("identifies the extension newtab page", () => {

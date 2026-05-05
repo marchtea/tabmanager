@@ -10,6 +10,9 @@ const STORAGE_KEY = "tabManagerWorkspace";
 const SETTINGS_STORAGE_KEY = "tabManagerSettings";
 const LOCAL_STATE_STORAGE_KEY = "tabdock:local-state:v1";
 const GLOBAL_SEARCH_COMMAND = "open_global_search";
+const HISTORY_SEARCH_WINDOW_DAYS = 90;
+const HISTORY_FALLBACK_WINDOW_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const getChrome = (): ChromeLike | undefined => {
   if (typeof chrome === "undefined") {
@@ -234,9 +237,24 @@ export const searchRecentHistory = async (
   now: number,
   maxResults = 100
 ): Promise<HistoryEntry[]> => {
-  const startTime = now - 90 * 24 * 60 * 60 * 1000;
-  const records = await chromeApi.history?.search?.({ text, startTime, maxResults }) ?? [];
-  return records.flatMap(mapHistoryRecord);
+  if (!chromeApi.history?.search) {
+    return [];
+  }
+
+  const startTime = now - HISTORY_SEARCH_WINDOW_DAYS * DAY_MS;
+  const queryRecords = await chromeApi.history.search({ text, startTime, maxResults });
+  if (!text.trim()) {
+    return queryRecords.flatMap(mapHistoryRecord);
+  }
+
+  const fallbackStartTime = now - HISTORY_FALLBACK_WINDOW_DAYS * DAY_MS;
+  const fallbackRecords = await chromeApi.history.search({
+    text: "",
+    startTime: fallbackStartTime,
+    maxResults
+  });
+
+  return dedupeHistoryEntriesByUrl([...queryRecords, ...fallbackRecords].flatMap(mapHistoryRecord));
 };
 
 export const buildGlobalSearchGroups = async (
@@ -256,7 +274,13 @@ export const handleGlobalSearchResult = async (
   chromeApi: ChromeLike,
   result: SearchResult
 ): Promise<void> => {
-  if ((result.kind === "saved-tab" || result.kind === "open-tab" || result.kind === "history") && result.url) {
+  if (
+    (result.kind === "saved-tab" ||
+      result.kind === "open-tab" ||
+      result.kind === "history" ||
+      result.kind === "google-search") &&
+    result.url
+  ) {
     await focusOrCreateTab(chromeApi, result.url);
     return;
   }
@@ -391,6 +415,18 @@ const mapHistoryRecord = (record: ChromeHistoryRecord): HistoryEntry[] => {
       lastVisitTime: record.lastVisitTime ?? 0
     }
   ];
+};
+
+const dedupeHistoryEntriesByUrl = (entries: HistoryEntry[]): HistoryEntry[] => {
+  const seenUrls = new Set<string>();
+  return entries.filter((entry) => {
+    const normalized = normalizeUrl(entry.url);
+    if (seenUrls.has(normalized)) {
+      return false;
+    }
+    seenUrls.add(normalized);
+    return true;
+  });
 };
 
 const isEqual = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);

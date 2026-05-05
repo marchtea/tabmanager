@@ -16,19 +16,76 @@ export const createIdGenerator = (prefix: string): IdGenerator => {
 };
 
 const TRACKING_PARAM_NAMES = new Set([
+  "_ga",
+  "_gl",
+  "_hsenc",
+  "_hsmi",
+  "dclid",
+  "fb_action_ids",
+  "fb_action_types",
+  "fb_ref",
   "fbclid",
+  "gbraid",
   "gclid",
+  "gclsrc",
   "igshid",
+  "li_fat_id",
   "mc_cid",
   "mc_eid",
   "mkt_tok",
   "msclkid",
+  "ref_src",
   "spm",
   "spm_id_from",
+  "ttclid",
+  "twclid",
+  "vd_source",
   "vero_conv",
   "vero_id",
+  "wbraid",
   "yclid"
 ]);
+
+const HOST_TRACKING_PARAM_NAMES: Array<{ hostnamePattern: RegExp; params: ReadonlySet<string> }> = [
+  {
+    hostnamePattern: /(^|\.)bilibili\.com$/,
+    params: new Set([
+      "buvid",
+      "from_source",
+      "from_spm_id",
+      "from_spmid",
+      "live_from",
+      "seid",
+      "share_medium",
+      "share_plat",
+      "share_session_id",
+      "share_source",
+      "trackid",
+      "unique_k",
+      "visit_id"
+    ])
+  },
+  {
+    hostnamePattern: /(^|\.)youtu\.be$|(^|\.)youtube\.com$/,
+    params: new Set(["feature", "pp", "si"])
+  },
+  {
+    hostnamePattern: /(^|\.)twitter\.com$|(^|\.)x\.com$/,
+    params: new Set(["s", "t"])
+  },
+  {
+    hostnamePattern: /(^|\.)tiktok\.com$/,
+    params: new Set(["share_app_name", "share_iid", "timestamp", "u_code"])
+  },
+  {
+    hostnamePattern: /(^|\.)linkedin\.com$/,
+    params: new Set(["trackingid", "trk"])
+  },
+  {
+    hostnamePattern: /(^|\.)taobao\.com$|(^|\.)tmall\.com$|(^|\.)youku\.com$|(^|\.)aliyun\.com$/,
+    params: new Set(["ali_trackid", "algo_expid", "algo_pvid", "pvid", "scm", "utparam"])
+  }
+];
 
 export const normalizeUrl = (url: string): string => {
   try {
@@ -36,7 +93,7 @@ export const normalizeUrl = (url: string): string => {
     parsed.hash = "";
     for (const key of [...parsed.searchParams.keys()]) {
       const normalizedKey = key.toLowerCase();
-      if (normalizedKey.startsWith("utm_") || TRACKING_PARAM_NAMES.has(normalizedKey)) {
+      if (isTrackingParam(parsed.hostname, normalizedKey)) {
         parsed.searchParams.delete(key);
       }
     }
@@ -46,6 +103,13 @@ export const normalizeUrl = (url: string): string => {
     return url.trim().replace(/#.*$/, "").replace(/\/$/, "").toLowerCase();
   }
 };
+
+const isTrackingParam = (hostname: string, paramName: string): boolean =>
+  paramName.startsWith("utm_") ||
+  TRACKING_PARAM_NAMES.has(paramName) ||
+  HOST_TRACKING_PARAM_NAMES.some(
+    ({ hostnamePattern, params }) => hostnamePattern.test(hostname) && params.has(paramName)
+  );
 
 export const createSpace = (
   state: WorkspaceState,

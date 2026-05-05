@@ -46,6 +46,7 @@
     input {
       width: 100%;
       height: 60px;
+      flex: 0 0 60px;
       padding: 0 18px;
       border: 0;
       border-bottom: 1px solid #eceae4;
@@ -60,9 +61,11 @@
       font-size: 18px;
     }
     .results {
+      flex: 1 1 auto;
       min-height: 0;
       overflow-y: auto;
       padding: 10px;
+      overscroll-behavior: contain;
     }
     .group {
       display: flex;
@@ -168,7 +171,8 @@
         query: input.value
       });
       groups = response?.groups || emptyGroups();
-      flatResults = flatten(groups);
+      const localResults = flatten(groups);
+      flatResults = getResultsWithGoogleFallback(input.value, localResults);
       selectedIndex = 0;
       render();
     }, 120);
@@ -195,10 +199,17 @@
     renderGroup("Saved Tabs", groups.savedTabs);
     renderGroup("Open Tabs", groups.openTabs);
     renderGroup("History", groups.history);
+    if (!flatten(groups).length && input.value.trim()) {
+      const empty = document.createElement("p");
+      empty.className = "empty";
+      empty.textContent = "没有结果";
+      resultList.append(empty);
+    }
+    renderGroup("Google", flatResults.filter((result) => result.kind === "google-search"));
     if (flatResults.length === 0) {
       const empty = document.createElement("p");
       empty.className = "empty";
-      empty.textContent = input.value.trim() ? "没有结果" : "输入关键词开始搜索";
+      empty.textContent = "输入关键词开始搜索";
       resultList.append(empty);
     }
   };
@@ -295,5 +306,22 @@ function flatten(groups) {
     ...groups.savedTabs,
     ...groups.openTabs,
     ...groups.history
+  ];
+}
+
+function getResultsWithGoogleFallback(query, localResults) {
+  const trimmedQuery = query.trim();
+  if (localResults.length || !trimmedQuery) {
+    return localResults;
+  }
+
+  return [
+    {
+      id: `google-search:${trimmedQuery}`,
+      kind: "google-search",
+      title: `用 Google 搜索 "${trimmedQuery}"`,
+      subtitle: "没有 TabDock 结果",
+      url: `https://www.google.com/search?q=${encodeURIComponent(trimmedQuery)}`
+    }
   ];
 }

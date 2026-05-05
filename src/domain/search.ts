@@ -5,7 +5,7 @@ import type {
   SearchResult,
   WorkspaceState
 } from "./types";
-import { getOrderedSpaces } from "./workspaceStore";
+import { getOrderedSpaces, normalizeUrl } from "./workspaceStore";
 
 const HISTORY_WINDOW_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -34,13 +34,13 @@ export const buildSearchGroups = (
   historyEntries: HistoryEntry[],
   now: number
 ): SearchGroups => {
-  const normalizedQuery = normalizeText(query);
-  if (!normalizedQuery) {
+  const queryTerms = normalizeSearchTerms(query);
+  if (queryTerms.length === 0) {
     return emptySearchGroups();
   }
 
   const spaces = getOrderedSpaces(state)
-    .filter((space) => matches(normalizedQuery, [space.name]))
+    .filter((space) => matches(queryTerms, [space.name]))
     .map<SearchResult>((space) => ({
       id: `space:${space.id}`,
       kind: "space",
@@ -50,7 +50,7 @@ export const buildSearchGroups = (
     }));
 
   const stacks = Object.values(state.stacks)
-    .filter((stack) => matches(normalizedQuery, [stack.name]))
+    .filter((stack) => matches(queryTerms, [stack.name]))
     .map<SearchResult>((stack) => ({
       id: `stack:${stack.id}`,
       kind: "stack",
@@ -61,7 +61,7 @@ export const buildSearchGroups = (
     }));
 
   const savedTabs = Object.values(state.tabs)
-    .filter((tab) => matches(normalizedQuery, [tab.title, tab.url, tab.description]))
+    .filter((tab) => matches(queryTerms, [tab.title, tab.url, tab.description]))
     .map<SearchResult>((tab) => ({
       id: `saved-tab:${tab.id}`,
       kind: "saved-tab",
@@ -75,7 +75,7 @@ export const buildSearchGroups = (
 
   const openTabs = openBlocks.flatMap((block) =>
     block.tabs
-      .filter((tab) => matches(normalizedQuery, [tab.title, tab.url, tab.description]))
+      .filter((tab) => matches(queryTerms, [tab.title, tab.url, tab.description]))
       .map<SearchResult>((tab) => ({
         id: `open-tab:${block.windowId}:${tab.id}`,
         kind: "open-tab",
@@ -87,20 +87,35 @@ export const buildSearchGroups = (
       }))
   );
 
-  const history = filterRecentHistory(historyEntries, now)
-    .filter((entry) => matches(normalizedQuery, [entry.title, entry.url]))
-    .map<SearchResult>((entry) => ({
-      id: `history:${entry.id}`,
-      kind: "history",
-      title: entry.title || entry.url,
-      subtitle: entry.url,
-      url: entry.url
-    }));
+  const seenHistoryUrls = new Set<string>();
+  const history = filterRecentHistory(historyEntries, now).flatMap<SearchResult>((entry) => {
+    const normalizedUrl = normalizeUrl(entry.url);
+    if (!matches(queryTerms, [entry.title, entry.url, normalizedUrl]) || seenHistoryUrls.has(normalizedUrl)) {
+      return [];
+    }
+    seenHistoryUrls.add(normalizedUrl);
+    return [
+      {
+        id: `history:${entry.id}`,
+        kind: "history",
+        title: entry.title || normalizedUrl,
+        subtitle: normalizedUrl,
+        url: normalizedUrl
+      }
+    ];
+  });
 
   return { spaces, stacks, savedTabs, openTabs, history };
 };
 
-const matches = (query: string, fields: Array<string | undefined>): boolean =>
-  fields.some((field) => normalizeText(field).includes(query));
+const matches = (queryTerms: string[], fields: Array<string | undefined>): boolean => {
+  const normalizedFields = fields.map(normalizeText);
+  return queryTerms.every((term) => normalizedFields.some((field) => field.includes(term)));
+};
 
 const normalizeText = (value?: string): string => value?.trim().toLowerCase() ?? "";
+
+const normalizeSearchTerms = (value: string): string[] =>
+  normalizeText(value)
+    .split(/\s+/)
+    .filter(Boolean);
