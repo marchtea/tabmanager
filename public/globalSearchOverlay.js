@@ -192,6 +192,16 @@
     }
   };
 
+  const syncSelectedResult = () => {
+    const buttons = [...resultList.querySelectorAll("button[data-result-index]")];
+    for (const button of buttons) {
+      button.classList.toggle("selected", Number(button.dataset.resultIndex) === selectedIndex);
+    }
+    resultList
+      .querySelector(`button[data-result-index="${selectedIndex}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  };
+
   const render = () => {
     resultList.replaceChildren();
     renderGroup("Spaces", groups.spaces);
@@ -212,6 +222,7 @@
       empty.textContent = "输入关键词开始搜索";
       resultList.append(empty);
     }
+    syncSelectedResult();
   };
 
   const renderGroup = (label, results) => {
@@ -229,6 +240,7 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = index === selectedIndex ? "selected" : "";
+      button.dataset.resultIndex = String(index);
       const title = document.createElement("strong");
       title.textContent = result.title;
       button.append(title);
@@ -239,7 +251,10 @@
       }
       button.addEventListener("mouseenter", () => {
         selectedIndex = index;
-        render();
+        syncSelectedResult();
+      });
+      button.addEventListener("mousedown", (event) => {
+        event.preventDefault();
       });
       button.addEventListener("click", () => {
         selectedIndex = index;
@@ -267,12 +282,12 @@
     if (event.key === "ArrowDown") {
       event.preventDefault();
       selectedIndex = Math.min(selectedIndex + 1, Math.max(flatResults.length - 1, 0));
-      render();
+      syncSelectedResult();
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
       selectedIndex = Math.max(selectedIndex - 1, 0);
-      render();
+      syncSelectedResult();
     }
     if (event.key === "Enter") {
       event.preventDefault();

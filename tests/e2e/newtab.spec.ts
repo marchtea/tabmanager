@@ -724,6 +724,72 @@ test.describe("TabDock newtab MVP", () => {
       )
     ).toEqual([]);
   });
+
+  test("global search overlay keeps mouse hover clickable and input focused", async ({ page }) => {
+    await page.evaluate(() => {
+      const pickedResults: unknown[] = [];
+      const queries: string[] = [];
+      Object.defineProperty(window, "chrome", {
+        configurable: true,
+        value: {
+          runtime: {
+            sendMessage: async (message: { type?: string; query?: string; result?: unknown }) => {
+              if (message.type === "tab-manager:global-search-pick") {
+                pickedResults.push(message.result);
+                return { ok: true };
+              }
+              queries.push(message.query ?? "");
+              return {
+                groups: {
+                  spaces: [],
+                  stacks: [],
+                  savedTabs: [],
+                  openTabs: [
+                    {
+                      id: "open-tab:1",
+                      kind: "open-tab",
+                      title: "React Result",
+                      subtitle: "https://react.dev",
+                      url: "https://react.dev"
+                    }
+                  ],
+                  history: []
+                }
+              };
+            }
+          }
+        }
+      });
+      Object.assign(window, { __TAB_MANAGER_GLOBAL_SEARCH_TEST__: { pickedResults, queries } });
+    });
+
+    await page.addScriptTag({ url: "/globalSearchOverlay.js" });
+    const input = page.locator("#tab-manager-global-search-host input");
+    const result = page.locator("#tab-manager-global-search-host button", { hasText: "React Result" });
+
+    await input.pressSequentially("rea");
+    await expect(result).toBeVisible();
+
+    await result.hover();
+    await page.keyboard.type("c");
+    await expect(input).toHaveValue("reac");
+
+    await result.click();
+    await expect(page.locator("#tab-manager-global-search-host")).toHaveCount(0);
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const state = (window as unknown as {
+            __TAB_MANAGER_GLOBAL_SEARCH_TEST__: { pickedResults: Array<{ id?: string }>; queries: string[] };
+          }).__TAB_MANAGER_GLOBAL_SEARCH_TEST__;
+          return {
+            pickedIds: state.pickedResults.map((result) => result.id),
+            lastQuery: state.queries.at(-1)
+          };
+        })
+      )
+      .toEqual({ pickedIds: ["open-tab:1"], lastQuery: "reac" });
+  });
 });
 
 test.describe("Open tabs panel window moves", () => {

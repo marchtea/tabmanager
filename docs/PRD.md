@@ -104,7 +104,7 @@ MVP 已实现目标：
 - 弹窗顶部是搜索输入框。
 - 结果按类型分组：Spaces、Stacks、Saved Tabs、Open Tabs、History。
 - 支持键盘上下选择和 Enter 打开。
-- 支持鼠标点击结果。
+- 支持鼠标悬停选择和点击结果，悬停后输入框仍保持键盘输入焦点。
 - 打开后输入框必须立即聚焦，用户可直接输入。
 - 当没有 TabDock 本地结果时，展示 Google 搜索操作项；点击或按 Enter 会用当前关键词打开 Google 搜索。
 
@@ -360,7 +360,7 @@ type TabManagerSettings = {
 - 点击 saved tab 时，已打开则切换，未打开则新开。
 - 搜索能找到 saved spaces、stacks、tabs、open tabs 和近 90 天 history。
 - 应用内快捷键和 Chrome 全局快捷键能打开搜索，搜索输入框立即聚焦。
-- 普通网页全局搜索 overlay 能搜索并打开结果，键盘事件不透传到原页面。
+- 普通网页全局搜索 overlay 能搜索、悬停选择、点击打开结果，键盘事件不透传到原页面。
 - 右侧 open tabs 面板能折叠/展开，window block 能折叠/展开。
 - 能关闭单个 open tab、关闭整个 window、移动 open tab 到另一个 window。
 - 能关闭重复 open tabs，并保留当前活跃 TabDock tab。
@@ -403,7 +403,7 @@ E2E tests：
 - Stack 内 saved tabs 批量删除。
 - Open tabs 面板折叠、window block 折叠、sticky 标题和滚动行为。
 - 全局快捷键打开搜索并立即输入。
-- 全局搜索 overlay 阻止键盘事件透传。
+- 全局搜索 overlay 阻止键盘事件透传，并保持鼠标悬停后的点击和输入焦点。
 - 导出、导入、无效导入、本地目录自动备份。
 - Open tabs 关闭、移动和去重流程。
 
