@@ -314,6 +314,53 @@ export const deleteSavedTabs = (
   };
 };
 
+export const updateSavedTab = (
+  state: WorkspaceState,
+  spaceId: string,
+  tabId: string,
+  updates: { title: string; url: string },
+  clock: Clock
+): WorkspaceState => {
+  const tab = state.tabs[tabId];
+  if (!state.spaces[spaceId] || !tab || tab.spaceId !== spaceId) {
+    return state;
+  }
+
+  const url = updates.url.trim();
+  if (!url) {
+    return state;
+  }
+
+  const normalizedUrl = normalizeUrl(url);
+  const duplicateTab = Object.values(state.tabs).find(
+    (candidate) =>
+      candidate.id !== tabId &&
+      candidate.spaceId === spaceId &&
+      normalizeUrl(candidate.url) === normalizedUrl
+  );
+  if (duplicateTab) {
+    return state;
+  }
+
+  const title = updates.title.trim() || url;
+  if (tab.title === title && tab.url === url) {
+    return state;
+  }
+
+  return {
+    ...state,
+    tabs: {
+      ...state.tabs,
+      [tabId]: {
+        ...tab,
+        title,
+        url,
+        updatedAt: clock()
+      }
+    }
+  };
+};
+
 export const moveStack = (
   state: WorkspaceState,
   spaceId: string,

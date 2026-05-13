@@ -153,7 +153,9 @@ Saved Tab 操作：
 - 支持从一个 stack 拖动 tab 到同 stack 内重新排序。
 - 支持从一个 stack 拖动 tab 到另一个 stack，改变分类并插入目标位置。
 - 支持进入单个 stack 的选择模式，选择多个 saved tabs 后一次性删除。
+- 在单个 stack 的选择模式中，hover saved tab 时显示编辑入口；点击后弹窗编辑标题和 URL，保存后更新本地记录。
 - 同一个 URL 在同一 space 内只保存一份。
+- 编辑 saved tab URL 时，同一 space 内仍不能产生重复 URL。
 - 如果用户把已存在于当前 space 的 URL 拖入另一个 stack：
   - 移动现有 saved tab 到目标 stack。
   - 按拖入位置更新排序。
@@ -356,6 +358,7 @@ type TabManagerSettings = {
 - 能拖动 block 标题创建包含整个 window tabs 的 stack。
 - 能在 stack 内和 stack 间拖动 saved tab。
 - 能选择并批量删除单个 stack 内的 saved tabs。
+- 能在单个 stack 的选择模式中编辑 saved tab 的标题和 URL。
 - 同一 space 内同 URL 不重复保存。
 - 点击 saved tab 时，已打开则切换，未打开则新开。
 - 搜索能找到 saved spaces、stacks、tabs、open tabs 和近 90 天 history。
@@ -375,6 +378,7 @@ Unit tests：
 - URL 去重和移动策略。
 - Space 拖拽排序。
 - 批量删除 saved tabs。
+- 编辑 saved tab 标题和 URL，并拒绝同一 space 内重复 URL。
 - 搜索结果分组和排序。
 - History 时间范围过滤。
 - 本地状态 schema 序列化、导入校验、旧数据归一化。
@@ -401,6 +405,7 @@ E2E tests：
 - 删除 stack/space 的确认流程。
 - Space 拖拽排序。
 - Stack 内 saved tabs 批量删除。
+- Stack 选择模式中编辑 saved tab 标题和 URL。
 - Open tabs 面板折叠、window block 折叠、sticky 标题和滚动行为。
 - 全局快捷键打开搜索并立即输入。
 - 全局搜索 overlay 阻止键盘事件透传，并保持鼠标悬停后的点击和输入焦点。

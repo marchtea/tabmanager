@@ -18,7 +18,8 @@ import {
   renameSpace,
   renameStack,
   saveOpenTabToStack,
-  saveOpenWindowAsStack
+  saveOpenWindowAsStack,
+  updateSavedTab
 } from "./workspaceStore";
 import type { WorkspaceState } from "./types";
 
@@ -303,6 +304,64 @@ describe("workspace store", () => {
     expect(deleteSavedTabs(next, "space-1", "stack-1", ["tab-3"], clock)).toBe(next);
     expect(deleteSavedTabs(next, "space-1", "missing", ["tab-2"], clock)).toBe(next);
     expect(deleteSavedTabs(next, "missing", "stack-1", ["tab-2"], clock)).toBe(next);
+  });
+
+  it("updates saved tab title and URL without creating duplicate URLs in a space", () => {
+    let state = emptyWorkspaceState();
+    state = createSpace(state, "Workspace", clock, () => "space-1");
+    state = createStack(state, "space-1", "Reading", clock, () => "stack-1");
+    state = saveOpenTabToStack(
+      state,
+      "space-1",
+      "stack-1",
+      {
+        id: 1,
+        windowId: 1,
+        title: "React",
+        url: "https://react.dev",
+        description: "React docs"
+      },
+      0,
+      clock,
+      () => "tab-1"
+    );
+    state = saveOpenTabToStack(
+      state,
+      "space-1",
+      "stack-1",
+      { id: 2, windowId: 1, title: "Vite", url: "https://vite.dev/" },
+      1,
+      clock,
+      () => "tab-2"
+    );
+
+    const updated = updateSavedTab(
+      state,
+      "space-1",
+      "tab-1",
+      { title: "React Reference", url: "https://react.dev/reference" },
+      () => 1_776_496_300_000
+    );
+    const duplicate = updateSavedTab(
+      updated,
+      "space-1",
+      "tab-1",
+      { title: "Duplicate", url: "https://vite.dev/#intro" },
+      clock
+    );
+
+    expect(updated).not.toBe(state);
+    expect(state.tabs["tab-1"].title).toBe("React");
+    expect(updated.tabs["tab-1"]).toMatchObject({
+      title: "React Reference",
+      url: "https://react.dev/reference",
+      description: "React docs",
+      updatedAt: 1_776_496_300_000
+    });
+    expect(duplicate).toBe(updated);
+    expect(updateSavedTab(updated, "space-1", "tab-1", { title: "No URL", url: "   " }, clock)).toBe(updated);
+    expect(updateSavedTab(updated, "missing", "tab-1", { title: "Nope", url: "https://nope.test" }, clock)).toBe(updated);
+    expect(updateSavedTab(updated, "space-1", "missing", { title: "Nope", url: "https://nope.test" }, clock)).toBe(updated);
   });
 
   it("returns the active space fallback and stable generated ids", () => {

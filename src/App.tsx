@@ -47,10 +47,12 @@ import {
   moveSavedTab,
   moveSpace,
   moveStack,
+  normalizeUrl,
   renameSpace,
   renameStack,
   saveOpenTabToStack,
-  saveOpenWindowAsStack
+  saveOpenWindowAsStack,
+  updateSavedTab
 } from "./domain/workspaceStore";
 
 type DragPayload =
@@ -130,6 +132,7 @@ export const App = () => {
   const [loaded, setLoaded] = useState(false);
   const [tabSelectionStackId, setTabSelectionStackId] = useState<string>();
   const [selectedSavedTabIds, setSelectedSavedTabIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [editingSavedTabId, setEditingSavedTabId] = useState<string>();
   const didHandleInitialUrlRef = useRef(false);
   const latestLocalStateRef = useRef<TabDockLocalStateV1 | undefined>(undefined);
   const skipNextLocalStateSaveRef = useRef(false);
@@ -397,6 +400,7 @@ export const App = () => {
     if (!selectedStack || !activeSpace || selectedStack.spaceId !== activeSpace.id) {
       setTabSelectionStackId(undefined);
       setSelectedSavedTabIds(new Set());
+      setEditingSavedTabId(undefined);
       return;
     }
     setSelectedSavedTabIds((currentIds) => {
@@ -437,6 +441,7 @@ export const App = () => {
   const clearSavedTabSelection = () => {
     setTabSelectionStackId(undefined);
     setSelectedSavedTabIds(new Set());
+    setEditingSavedTabId(undefined);
   };
 
   const setActiveSpace = (spaceId: string) => {
@@ -447,6 +452,7 @@ export const App = () => {
   const startSavedTabSelection = (stackId: string) => {
     setTabSelectionStackId(stackId);
     setSelectedSavedTabIds(new Set());
+    setEditingSavedTabId(undefined);
   };
 
   const toggleSavedTabSelection = (stackId: string, tabId: string) => {
@@ -471,6 +477,34 @@ export const App = () => {
     const tabIds = [...selectedSavedTabIds];
     setWorkspace((state) => deleteSavedTabs(state, activeSpace.id, stackId, tabIds, now));
     clearSavedTabSelection();
+  };
+
+  const startEditingSavedTab = (stackId: string, tabId: string) => {
+    if (tabSelectionStackId !== stackId) {
+      return;
+    }
+    setEditingSavedTabId(tabId);
+  };
+
+  const saveEditedSavedTab = (tabId: string, title: string, url: string): string | undefined => {
+    if (!activeSpace) {
+      return "当前没有可编辑的 Space。";
+    }
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
+      return "URL 不能为空。";
+    }
+    const normalizedUrl = normalizeUrl(trimmedUrl);
+    const hasDuplicateUrl = Object.values(workspace.tabs).some(
+      (tab) => tab.id !== tabId && tab.spaceId === activeSpace.id && normalizeUrl(tab.url) === normalizedUrl
+    );
+    if (hasDuplicateUrl) {
+      return "当前 Space 已有相同 URL。";
+    }
+
+    setWorkspace((state) => updateSavedTab(state, activeSpace.id, tabId, { title, url: trimmedUrl }, now));
+    setEditingSavedTabId(undefined);
+    return undefined;
   };
 
   const handleResult = async (result: SearchResult) => {
@@ -965,7 +999,7 @@ export const App = () => {
                   }
                   const isSelectedSavedTab = isSelectingThisStack && selectedSavedTabIds.has(tab.id);
                   return (
-                    <button
+                    <div
                       aria-pressed={isSelectingThisStack ? isSelectedSavedTab : undefined}
                       className={`saved-tab ${isSelectingThisStack ? "is-select-mode" : ""} ${
                         isSelectedSavedTab ? "is-selected" : ""
@@ -973,8 +1007,20 @@ export const App = () => {
                       data-testid="saved-tab"
                       draggable={!isSelectingThisStack}
                       key={tab.id}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => {
+                        if (isSelectingThisStack) {
+                          toggleSavedTabSelection(stack.id, tab.id);
+                          return;
+                        }
+                        void openUrl(tab.url);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") {
+                          return;
+                        }
+                        event.preventDefault();
                         if (isSelectingThisStack) {
                           toggleSavedTabSelection(stack.id, tab.id);
                           return;
@@ -1003,7 +1049,22 @@ export const App = () => {
                         <strong>{tab.title}</strong>
                         <small>{tab.description || tab.url}</small>
                       </span>
-                    </button>
+                      {isSelectingThisStack && (
+                        <button
+                          className="saved-tab-edit"
+                          data-testid="edit-saved-tab"
+                          type="button"
+                          title="编辑 URL"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            startEditingSavedTab(stack.id, tab.id);
+                          }}
+                        >
+                          <Icon name="edit" />
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
                 {stack.tabIds.length === 0 && <p className="drop-hint">从右侧拖入 Tab</p>}
@@ -1185,7 +1246,92 @@ export const App = () => {
           onRestoreLatestBackup={() => void handleRestoreLatestBackup()}
         />
       )}
+      {editingSavedTabId && workspace.tabs[editingSavedTabId] && (
+        <EditSavedTabModal
+          tab={workspace.tabs[editingSavedTabId]}
+          onClose={() => setEditingSavedTabId(undefined)}
+          onSave={(title, url) => saveEditedSavedTab(editingSavedTabId, title, url)}
+        />
+      )}
     </main>
+  );
+};
+
+const EditSavedTabModal = ({
+  tab,
+  onClose,
+  onSave
+}: {
+  tab: { title: string; url: string };
+  onClose: () => void;
+  onSave: (title: string, url: string) => string | undefined;
+}) => {
+  const [title, setTitle] = useState(tab.title);
+  const [url, setUrl] = useState(tab.url);
+  const [error, setError] = useState("");
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    titleInputRef.current?.focus();
+  }, []);
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const message = onSave(title, url);
+    setError(message ?? "");
+  };
+
+  return (
+    <div className="search-backdrop" onMouseDown={onClose}>
+      <form
+        className="settings-modal edit-saved-tab-modal"
+        data-testid="edit-saved-tab-modal"
+        onMouseDown={(event) => event.stopPropagation()}
+        onSubmit={submit}
+      >
+        <header>
+          <div>
+            <p className="eyebrow">Saved Tab</p>
+            <h2>编辑 URL</h2>
+          </div>
+          <button className="tiny-button" type="button" title="关闭" onClick={onClose}>
+            <Icon name="chevron-down" />
+          </button>
+        </header>
+        <label className="shortcut-field">
+          <span>标题</span>
+          <input
+            ref={titleInputRef}
+            aria-label="标题"
+            data-testid="edit-saved-tab-title"
+            value={title}
+            onChange={(event) => setTitle(event.currentTarget.value)}
+          />
+        </label>
+        <label className="shortcut-field">
+          <span>URL</span>
+          <input
+            aria-label="URL"
+            data-testid="edit-saved-tab-url"
+            value={url}
+            onChange={(event) => setUrl(event.currentTarget.value)}
+          />
+        </label>
+        {error && (
+          <p className="settings-note" data-testid="edit-saved-tab-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="settings-actions edit-saved-tab-actions">
+          <button type="button" onClick={onClose}>
+            取消
+          </button>
+          <button data-testid="save-saved-tab-edit" type="submit">
+            保存
+          </button>
+        </div>
+      </form>
+    </div>
   );
 };
 

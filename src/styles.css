@@ -626,14 +626,15 @@ kbd {
     opacity 140ms ease;
 }
 
+.saved-tab.is-select-mode {
+  grid-template-columns: 24px minmax(0, 1fr) 30px;
+  align-items: center;
+}
+
 .saved-tab:hover,
 .open-tab:hover {
   border-color: var(--line-strong);
   background: var(--surface);
-}
-
-.saved-tab.is-select-mode {
-  cursor: pointer;
 }
 
 .saved-tab.is-selected {
@@ -717,6 +718,39 @@ kbd {
   width: 11px;
   height: 11px;
   stroke-width: 2.8;
+}
+
+.saved-tab-edit {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  color: var(--muted);
+  background: transparent;
+  opacity: 0;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease;
+}
+
+.saved-tab:hover .saved-tab-edit,
+.saved-tab:focus-within .saved-tab-edit {
+  opacity: 1;
+}
+
+.saved-tab-edit:hover {
+  border-color: var(--line);
+  color: var(--charcoal);
+  background: var(--cream);
+}
+
+.saved-tab-edit .button-icon {
+  width: 15px;
+  height: 15px;
 }
 
 .drop-hint,
@@ -1130,6 +1164,17 @@ kbd {
   cursor: not-allowed;
   color: var(--muted);
   opacity: 0.62;
+}
+
+.edit-saved-tab-modal {
+  overflow: visible;
+}
+
+.edit-saved-tab-actions button:last-child {
+  border-color: var(--charcoal);
+  color: var(--off-white);
+  background: var(--charcoal);
+  box-shadow: var(--button-shadow);
 }
 
 .result-groups {

@@ -186,6 +186,34 @@ test.describe("TabDock newtab MVP", () => {
     await expect(stack.getByTestId("saved-tab").filter({ hasText: "Chrome Extension Manifest V3" })).toHaveCount(1);
   });
 
+  test("edits a saved tab title and URL from stack selection mode", async ({ page }) => {
+    await createSpace(page, "Edit Saved Tab");
+    await createStack(page, "Reading");
+
+    const stack = stackByName(page, "Reading");
+    await page.getByTestId("open-tab").filter({ hasText: "React" }).dragTo(stack);
+
+    await stack.getByTestId("select-stack-tabs").click();
+    const savedTab = stack.getByTestId("saved-tab").filter({ hasText: "React" });
+    await savedTab.hover();
+    await savedTab.getByTestId("edit-saved-tab").click();
+
+    await expect(page.getByTestId("edit-saved-tab-modal")).toBeVisible();
+    await expect(page.getByTestId("edit-saved-tab-title")).toHaveValue("React");
+    await expect(page.getByTestId("edit-saved-tab-url")).toHaveValue("https://react.dev");
+
+    await page.getByTestId("edit-saved-tab-title").fill("React Reference");
+    await page.getByTestId("edit-saved-tab-url").fill("https://react.dev/reference");
+    await page.getByTestId("save-saved-tab-edit").click();
+
+    await expect(page.getByTestId("edit-saved-tab-modal")).toHaveCount(0);
+    await expect(stack.getByTestId("saved-tab")).toContainText("React Reference");
+
+    await page.getByTestId("search-entry").click();
+    await page.getByRole("textbox", { name: "搜索 spaces、stacks、tabs、history" }).fill("reference");
+    await expect(page.getByTestId("search-result")).toContainText("React Reference");
+  });
+
   test("reorders stacks by dragging the stack header", async ({ page }) => {
     await createSpace(page, "Sort Research");
     await createStack(page, "Alpha");
@@ -306,7 +334,9 @@ test.describe("TabDock newtab MVP", () => {
     const popupPromise = page.waitForEvent("popup");
     await page.keyboard.press("Enter");
     const popup = await popupPromise;
-    await expect(popup).toHaveURL(/google\.com\/search\?q=no%20local%20result%20query/);
+    await expect(popup).toHaveURL(
+      /google\.com\/(?:search\?q=no%20local%20result%20query|sorry\/index\?continue=.*search%3Fq%3Dno%2520local%2520result%2520query)/
+    );
   });
 
   test("keeps the app shell pinned when selecting a stack from the sidebar", async ({ page }) => {
