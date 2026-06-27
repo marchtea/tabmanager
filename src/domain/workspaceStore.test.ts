@@ -8,6 +8,7 @@ import {
   deleteStack,
   emptyWorkspaceState,
   getActiveSpace,
+  getOpenTabsAlreadySavedInWorkspace,
   getOrderedSpaces,
   mergeWorkspaceStateChanges,
   moveSavedTab,
@@ -232,6 +233,46 @@ describe("workspace store", () => {
     expect(state.stacks["stack-old"].tabIds).toEqual([]);
     expect(state.stacks["stack-new"].tabIds).toEqual(["tab-existing", "tab-new"]);
     expect(state.tabs["tab-existing"].title).toBe("One moved");
+  });
+
+  it("finds open tabs already saved anywhere in the workspace by normalized URL", () => {
+    let state = emptyWorkspaceState();
+    state = createSpace(state, "研究", clock, () => "space-1");
+    state = createStack(state, "space-1", "待读", clock, () => "stack-1");
+    state = saveOpenTabToStack(
+      state,
+      "space-1",
+      "stack-1",
+      { id: 1, windowId: 1, title: "React", url: "https://react.dev/reference?utm_source=newsletter#hooks" },
+      0,
+      clock,
+      () => "tab-1"
+    );
+    state = createSpace(state, "视频", clock, () => "space-2");
+    state = createStack(state, "space-2", "待看", clock, () => "stack-2");
+    state = saveOpenTabToStack(
+      state,
+      "space-2",
+      "stack-2",
+      { id: 2, windowId: 2, title: "Video", url: "https://youtu.be/demo?si=shared" },
+      0,
+      clock,
+      () => "tab-2"
+    );
+
+    const savedOpenTabs = getOpenTabsAlreadySavedInWorkspace(state, [
+      {
+        windowId: 7,
+        label: "Window 1 · 3 tabs",
+        tabs: [
+          { id: 11, windowId: 7, title: "React Open", url: "https://react.dev/reference#state" },
+          { id: 12, windowId: 7, title: "Fresh", url: "https://fresh.test" },
+          { id: 13, windowId: 7, title: "Video Open", url: "https://youtu.be/demo" }
+        ]
+      }
+    ]);
+
+    expect(savedOpenTabs.map((tab) => tab.id)).toEqual([11, 13]);
   });
 
   it("deletes a stack without touching unrelated stacks or real Chrome tabs", () => {

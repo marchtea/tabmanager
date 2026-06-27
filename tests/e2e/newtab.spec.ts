@@ -90,6 +90,22 @@ test.describe("TabDock newtab MVP", () => {
     );
   });
 
+  test("clears open tabs that are already saved in the workspace", async ({ page }) => {
+    await createSpace(page, "Clear Saved");
+    await createStack(page, "Reading");
+
+    const stack = stackByName(page, "Reading");
+    await page.getByTestId("open-tab").filter({ hasText: "React" }).dragTo(stack);
+
+    await expect(page.getByTestId("clear-saved-open-tabs")).toBeEnabled();
+    await page.getByTestId("clear-saved-open-tabs").click();
+
+    await expect(page.getByTestId("open-tab").filter({ hasText: "React" })).toHaveCount(0);
+    await expect(page.getByTestId("open-tab")).toHaveCount(2);
+    await expect(stack.getByTestId("saved-tab")).toContainText("React");
+    await expect(page.getByTestId("dedupe-open-tabs-status")).toHaveText("已清除 1 个已保存 Tab");
+  });
+
   test("creates a stack from a whole open window block", async ({ page }) => {
     await acceptNextDialog(page, "Window Research");
     await page.getByTestId("add-space").click();
@@ -365,6 +381,7 @@ test.describe("TabDock newtab MVP", () => {
   test("renders open tabs in a floating, outer-scrolling, compact right panel", async ({ page }) => {
     const panel = page.getByTestId("open-tabs-panel");
     await expect(panel).toBeVisible();
+    await expect(page.getByTestId("open-tabs-heading")).toHaveText("Open 3 tabs");
 
     await expect.poll(async () =>
       panel.evaluate((element) => {

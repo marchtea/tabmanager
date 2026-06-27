@@ -1,4 +1,4 @@
-import type { OpenTab, SavedTab, Space, Stack, WorkspaceState } from "./types";
+import type { OpenTab, OpenTabBlock, SavedTab, Space, Stack, WorkspaceState } from "./types";
 
 export type Clock = () => number;
 export type IdGenerator = () => string;
@@ -527,6 +527,18 @@ export const getOrderedSpaces = (state: WorkspaceState): Space[] => {
   return normalizedState.spaceIds
     .map((spaceId) => normalizedState.spaces[spaceId])
     .filter((space): space is Space => Boolean(space));
+};
+
+export const getOpenTabsAlreadySavedInWorkspace = (
+  state: WorkspaceState,
+  openBlocks: OpenTabBlock[]
+): OpenTab[] => {
+  const savedUrls = new Set(Object.values(state.tabs).map((tab) => normalizeUrl(tab.url)));
+  if (savedUrls.size === 0) {
+    return [];
+  }
+
+  return openBlocks.flatMap((block) => block.tabs.filter((tab) => savedUrls.has(normalizeUrl(tab.url))));
 };
 
 export const normalizeWorkspaceState = (state: WorkspaceState): WorkspaceState => {

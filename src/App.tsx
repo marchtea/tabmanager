@@ -43,6 +43,7 @@ import {
   deleteStack,
   emptyWorkspaceState,
   getActiveSpace,
+  getOpenTabsAlreadySavedInWorkspace,
   getOrderedSpaces,
   moveSavedTab,
   moveSpace,
@@ -145,6 +146,10 @@ export const App = () => {
   const activeSavedTabCount = activeStacks.reduce((total, stack) => total + stack.tabIds.length, 0);
   const orderedSpaces = getOrderedSpaces(workspace);
   const openTabCount = openBlocks.reduce((total, block) => total + block.tabs.length, 0);
+  const savedOpenTabs = useMemo(
+    () => getOpenTabsAlreadySavedInWorkspace(workspace, openBlocks),
+    [openBlocks, workspace]
+  );
   const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
   const searchShortcutLabel = formatShortcutForPlatform(globalSearchShortcut, isMac);
   const searchGroups = useMemo(
@@ -720,6 +725,33 @@ export const App = () => {
     }
   };
 
+  const clearSavedOpenTabs = async () => {
+    if (savedOpenTabs.length === 0) {
+      setDedupeStatus("没有已保存的 Open Tab");
+      return;
+    }
+
+    const savedOpenTabIds = savedOpenTabs.map((tab) => tab.id);
+    if (chromeApi) {
+      await Promise.all(savedOpenTabIds.map((tabId) => closeOpenTab(chromeApi, tabId)));
+      await refreshOpenTabs();
+    } else {
+      const savedOpenTabIdSet = new Set(savedOpenTabIds);
+      setOpenBlocks((blocks) =>
+        relabelOpenBlocks(
+          blocks
+            .map((block) => ({
+              ...block,
+              tabs: block.tabs.filter((tab) => !savedOpenTabIdSet.has(tab.id))
+            }))
+            .filter((block) => block.tabs.length > 0)
+        )
+      );
+    }
+
+    setDedupeStatus(`已清除 ${savedOpenTabs.length} 个已保存 Tab`);
+  };
+
   const handleCloseOpenTab = async (tab: OpenTab, event: React.MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
@@ -1093,7 +1125,7 @@ export const App = () => {
         ) : (
           <>
         <header>
-          <p className="eyebrow">Open Tabs</p>
+          <p className="eyebrow" data-testid="open-tabs-heading">Open {openTabCount} tabs</p>
           <div className="open-tabs-actions">
             <button
               className="tiny-button"
@@ -1113,6 +1145,16 @@ export const App = () => {
               onClick={() => void dedupeOpenTabs()}
             >
               <Icon name="copy" />
+            </button>
+            <button
+              className="tiny-button"
+              data-testid="clear-saved-open-tabs"
+              disabled={savedOpenTabs.length === 0}
+              type="button"
+              title="清除已保存在 Workspace 的 Tab"
+              onClick={() => void clearSavedOpenTabs()}
+            >
+              <Icon name="check-square" />
             </button>
             <button
               className="tiny-button"

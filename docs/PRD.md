@@ -54,7 +54,7 @@ MVP 已实现目标：
 
 - `Space`、`Stack`、`Saved Tab` 的 CRUD、排序、拖拽保存和本地持久化已实现。
 - 新标签页三栏工作台、右侧 Open Tabs 浮窗、搜索弹窗、设置弹窗已实现。
-- Open Tabs 面板支持折叠、刷新、窗口 block 折叠、关闭 tab/window、重复 tab 清理、跨 window 移动 tab。
+- Open Tabs 面板支持总数展示、折叠、刷新、窗口 block 折叠、关闭 tab/window、重复 tab 清理、清除已保存 tab、跨 window 移动 tab。
 - 数据管理支持 JSON 导出、JSON 导入替换、授权本地目录、自动写入 `latest.json`、从 `latest.json` 恢复。
 - 全局搜索支持 Chrome command、普通网页 overlay、TabDock 页面内搜索弹窗复用。
 - 多个 TabDock 新标签页同时打开时，页面会监听本地存储变化并刷新 workspace/settings；并发保存会合并较新的持久化状态，避免新增 Space、Stack、Saved Tab 相互覆盖。
@@ -170,6 +170,7 @@ Saved Tab 操作：
 - Block 标题展示 tab 数量和 window 标识，例如 `Window 1 · 12 tabs`。
 - 每个 block 内展示该 window 的 tabs。
 - Block 标题支持折叠/展开；滚动时标题保持 sticky。
+- 面板标题展示当前 open tab 总数，例如 `Open 10 tabs`。
 - 面板支持整体折叠成窄 rail，并展示 open tab 总数。
 - 排除当前 TabDock 新标签页自身，避免管理器页面污染列表。
 - 对无法访问的页面，例如 `chrome://`、Chrome Web Store、扩展页面，仍展示 title/URL；meta description 可为空。
@@ -201,6 +202,10 @@ Open Tabs 操作：
   - URL 去重使用标准化 URL，忽略 hash、尾部斜杠和常见追踪参数。
   - 如果重复项包含当前活跃 TabDock tab，保留当前活跃 TabDock tab。
   - 操作完成后显示关闭数量或“没有重复 Tab”。
+- 点击清除已保存按钮关闭已经保存到任意 workspace space/stack 的 open tabs：
+  - URL 匹配使用标准化 URL，忽略 hash、尾部斜杠和常见追踪参数。
+  - 操作只关闭真实 Chrome open tabs，不删除 workspace 中的 saved tabs。
+  - 操作完成后显示清除数量；没有可清除项时按钮不可用。
 
 ### 3.5 设置与数据管理
 
@@ -365,8 +370,10 @@ type TabManagerSettings = {
 - 应用内快捷键和 Chrome 全局快捷键能打开搜索，搜索输入框立即聚焦。
 - 普通网页全局搜索 overlay 能搜索、悬停选择、点击打开结果，键盘事件不透传到原页面。
 - 右侧 open tabs 面板能折叠/展开，window block 能折叠/展开。
+- 右侧 open tabs 标题展示当前 open tab 总数。
 - 能关闭单个 open tab、关闭整个 window、移动 open tab 到另一个 window。
 - 能关闭重复 open tabs，并保留当前活跃 TabDock tab。
+- 能一键关闭已经保存到 workspace 的 open tabs，且保留 saved tabs。
 - 能导出 JSON、导入 JSON、拒绝无效 JSON、授权本地备份目录、写入和恢复 `latest.json`。
 - Chrome 禁止访问的页面不会导致页面崩溃。
 
