@@ -90,6 +90,33 @@ test.describe("TabDock newtab MVP", () => {
     );
   });
 
+  test("lists open tab matches before saved tab matches", async ({ page }) => {
+    await createSpace(page, "Search Priority");
+    await createStack(page, "Reading");
+
+    const stack = stackByName(page, "Reading");
+    await page.getByTestId("open-tab").filter({ hasText: "Vite" }).dragTo(stack);
+    await stack.getByTestId("select-stack-tabs").click();
+    const savedTab = stack.getByTestId("saved-tab").filter({ hasText: "Vite" });
+    await savedTab.hover();
+    await savedTab.getByTestId("edit-saved-tab").click();
+    await page.getByTestId("edit-saved-tab-title").fill("React Saved");
+    await page.getByTestId("save-saved-tab-edit").click();
+
+    await page.getByTestId("search-entry").click();
+    await page.getByRole("textbox", { name: "搜索 spaces、stacks、tabs、history" }).fill("React");
+
+    await expect(page.getByTestId("search-modal").locator("h3").allTextContents()).resolves.toEqual([
+      "Open Tabs",
+      "Saved Tabs"
+    ]);
+    await expect(page.getByTestId("search-result").first()).toHaveClass(/is-selected/);
+
+    const popupPromise = page.waitForEvent("popup");
+    await page.keyboard.press("Enter");
+    await expect(await popupPromise).toHaveURL(/react\.dev/);
+  });
+
   test("clears open tabs that are already saved in the workspace", async ({ page }) => {
     await createSpace(page, "Clear Saved");
     await createStack(page, "Reading");
@@ -790,7 +817,6 @@ test.describe("TabDock newtab MVP", () => {
                 groups: {
                   spaces: [],
                   stacks: [],
-                  savedTabs: [],
                   openTabs: [
                     {
                       id: "open-tab:1",
@@ -800,7 +826,24 @@ test.describe("TabDock newtab MVP", () => {
                       url: "https://react.dev"
                     }
                   ],
-                  history: []
+                  savedTabs: [
+                    {
+                      id: "saved-tab:1",
+                      kind: "saved-tab",
+                      title: "React Saved",
+                      subtitle: "https://saved-react.test",
+                      url: "https://saved-react.test"
+                    }
+                  ],
+                  history: [
+                    {
+                      id: "history:1",
+                      kind: "history",
+                      title: "React History",
+                      subtitle: "https://history-react.test",
+                      url: "https://history-react.test"
+                    }
+                  ]
                 }
               };
             }
@@ -816,6 +859,12 @@ test.describe("TabDock newtab MVP", () => {
 
     await input.pressSequentially("rea");
     await expect(result).toBeVisible();
+    await expect(page.locator("#tab-manager-global-search-host h2").allTextContents()).resolves.toEqual([
+      "Open Tabs",
+      "Saved Tabs",
+      "History"
+    ]);
+    await expect(result).toHaveClass(/selected/);
 
     await result.hover();
     await page.keyboard.type("c");

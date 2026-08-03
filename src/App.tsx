@@ -28,6 +28,7 @@ import {
   type TabDockLocalStateV1
 } from "./domain/persistence";
 import { buildSearchGroups } from "./domain/search";
+import { flattenSearchGroups } from "./searchResultOrder";
 import {
   DEFAULT_GLOBAL_SEARCH_SHORTCUT,
   formatShortcutForPlatform,
@@ -1566,8 +1567,8 @@ const SearchModal = ({
         <div className="result-groups">
           {renderGroup("Spaces", groups.spaces, flatResults, selectedIndex, onPick)}
           {renderGroup("Stacks", groups.stacks, flatResults, selectedIndex, onPick)}
-          {renderGroup("Saved Tabs", groups.savedTabs, flatResults, selectedIndex, onPick)}
           {renderGroup("Open Tabs", groups.openTabs, flatResults, selectedIndex, onPick)}
+          {renderGroup("Saved Tabs", groups.savedTabs, flatResults, selectedIndex, onPick)}
           {renderGroup("History", groups.history, flatResults, selectedIndex, onPick)}
           {!hasLocalResults && query.trim() && <p className="no-results">没有结果</p>}
           {renderGroup("Google", flatResults.filter((result) => result.kind === "google-search"), flatResults, selectedIndex, onPick)}
@@ -1695,14 +1696,6 @@ const Icon = ({ name }: { name: IconName }) => {
     </svg>
   );
 };
-
-const flattenSearchGroups = (groups: SearchGroups): SearchResult[] => [
-  ...groups.spaces,
-  ...groups.stacks,
-  ...groups.savedTabs,
-  ...groups.openTabs,
-  ...groups.history
-];
 
 const getSearchResultsWithGoogleFallback = (query: string, localResults: SearchResult[]): SearchResult[] => {
   const trimmedQuery = query.trim();

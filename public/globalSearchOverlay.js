@@ -206,8 +206,8 @@
     resultList.replaceChildren();
     renderGroup("Spaces", groups.spaces);
     renderGroup("Stacks", groups.stacks);
-    renderGroup("Saved Tabs", groups.savedTabs);
     renderGroup("Open Tabs", groups.openTabs);
+    renderGroup("Saved Tabs", groups.savedTabs);
     renderGroup("History", groups.history);
     if (!flatten(groups).length && input.value.trim()) {
       const empty = document.createElement("p");
@@ -318,8 +318,8 @@ function flatten(groups) {
   return [
     ...groups.spaces,
     ...groups.stacks,
-    ...groups.savedTabs,
     ...groups.openTabs,
+    ...groups.savedTabs,
     ...groups.history
   ];
 }
