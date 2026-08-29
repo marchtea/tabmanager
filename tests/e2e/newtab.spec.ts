@@ -430,7 +430,7 @@ test.describe("TabDock newtab MVP", () => {
       blocksOverflowY: "auto",
       blockFlex: "0 0 auto",
       blockOverflowY: "visible",
-      tabMinHeight: "48px"
+      tabMinHeight: "44px"
     });
   });
 
@@ -937,6 +937,61 @@ test.describe("Open tabs panel window moves", () => {
     await expect(target.getByTestId("open-tab").filter({ hasText: "React" })).toBeVisible();
     await expect(source.getByTestId("open-block-title")).toContainText("Window 1 · 1 tabs");
     await expect(target.getByTestId("open-block-title")).toContainText("Window 2 · 2 tabs");
+  });
+
+  test("reorders a dragged open tab inside the same Chrome window", async ({ page }) => {
+    await page.addInitScript(() => {
+      const tabs = [
+        { id: 1, windowId: 10, title: "Alpha", url: "https://alpha.test" },
+        { id: 2, windowId: 10, title: "Beta", url: "https://beta.test" },
+        { id: 3, windowId: 10, title: "Gamma", url: "https://gamma.test" }
+      ];
+      const moveCalls: Array<{ tabId: number; windowId?: number; index?: number }> = [];
+
+      Object.defineProperty(window, "chrome", {
+        configurable: true,
+        value: {
+          runtime: { id: "abc" },
+          storage: {
+            local: {
+              get: async () => ({}),
+              set: async () => undefined
+            }
+          },
+          tabs: {
+            query: async () => tabs.map((tab) => ({ ...tab })),
+            move: async (tabId: number, moveProperties: { windowId?: number; index?: number }) => {
+              moveCalls.push({ tabId, ...moveProperties });
+              const sourceIndex = tabs.findIndex((tab) => tab.id === tabId);
+              if (sourceIndex < 0) {
+                return undefined;
+              }
+              const [tab] = tabs.splice(sourceIndex, 1);
+              tab.windowId = moveProperties.windowId ?? tab.windowId;
+              const targetIndex = moveProperties.index === undefined || moveProperties.index < 0
+                ? tabs.length
+                : Math.min(moveProperties.index, tabs.length);
+              tabs.splice(targetIndex, 0, tab);
+              return { ...tab };
+            }
+          }
+        }
+      });
+      Object.assign(window, { __tabdockMoveCalls: moveCalls });
+    });
+
+    await page.goto("/");
+    const block = page.getByTestId("open-block").filter({ hasText: "Window 1" });
+    await block.getByTestId("open-tab").filter({ hasText: "Alpha" }).dragTo(
+      block.getByTestId("open-tab").filter({ hasText: "Gamma" })
+    );
+
+    await expect(block.getByTestId("open-tab").nth(1)).toContainText("Alpha");
+    await expect.poll(async () =>
+      page.evaluate(() => (window as typeof window & {
+        __tabdockMoveCalls?: Array<{ tabId: number; windowId?: number; index?: number }>;
+      }).__tabdockMoveCalls?.at(-1))
+    ).toEqual({ tabId: 1, windowId: 10, index: 1 });
   });
 });
 

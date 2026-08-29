@@ -11,6 +11,9 @@
   --line-strong: rgb(28 28 28 / 40%);
   --off-white: #fcfbf8;
   --focus-ring: rgb(59 130 246 / 50%);
+  --drag-accent: #3f6975;
+  --drag-accent-soft: rgb(63 105 117 / 8%);
+  --drag-accent-line: rgb(63 105 117 / 58%);
   --button-shadow:
     rgb(255 255 255 / 20%) 0 0.5px 0 0 inset,
     rgb(0 0 0 / 20%) 0 0 0 0.5px inset,
@@ -118,7 +121,7 @@ h3 {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 18px 14px;
+  padding: 16px 12px;
   border-right: 1px solid var(--line);
 }
 
@@ -342,7 +345,8 @@ kbd {
   background: transparent;
   transition:
     border-color 140ms ease,
-    background-color 140ms ease;
+    background-color 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .space-group.is-active {
@@ -350,7 +354,19 @@ kbd {
   background: var(--surface);
 }
 
+.space-group.is-drop-possible {
+  border-color: var(--drag-accent-line);
+  border-style: dashed;
+  background: var(--drag-accent-soft);
+}
+
+.space-group.is-drop-target {
+  border-color: var(--drag-accent);
+  box-shadow: 0 0 0 2px rgb(63 105 117 / 10%);
+}
+
 .space-row {
+  position: relative;
   min-height: 44px;
   padding: 5px 6px 5px 10px;
   border: 1px solid transparent;
@@ -360,6 +376,45 @@ kbd {
 .space-row.is-active {
   border-color: transparent;
   background: var(--surface-muted);
+}
+
+.space-drop-indicator {
+  position: absolute;
+  right: 8px;
+  left: 8px;
+  z-index: 2;
+  height: 2px;
+  border-radius: 9999px;
+  background: var(--drag-accent);
+  pointer-events: none;
+}
+
+.space-row.is-drop-before .space-drop-indicator {
+  top: -5px;
+}
+
+.space-row.is-drop-after .space-drop-indicator {
+  bottom: -5px;
+}
+
+.space-drop-indicator::after {
+  position: absolute;
+  right: 0;
+  bottom: 5px;
+  padding: 1px 6px;
+  border: 1px solid rgb(63 105 117 / 22%);
+  border-radius: 9999px;
+  color: var(--drag-accent);
+  background: var(--surface);
+  content: "放这里";
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.space-row.is-drop-after .space-drop-indicator::after {
+  top: 5px;
+  bottom: auto;
 }
 
 .space-row > button:first-child,
@@ -482,25 +537,37 @@ kbd {
   flex-direction: column;
   align-self: flex-start;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
+  border: 1px solid rgb(28 28 28 / 12%);
+  border-radius: 14px;
+  background: rgb(252 251 248 / 72%);
   transition:
     border-color 140ms ease,
-    background-color 140ms ease;
+    background-color 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .stack-column:has(.tab-list:hover),
 .stack-column:hover {
-  border-color: var(--line-strong);
+  border-color: rgb(28 28 28 / 24%);
 }
 
 .stack-header {
+  position: relative;
   min-height: 64px;
   align-items: flex-start;
   padding: 14px;
-  border-bottom: 1px solid rgb(28 28 28 / 6%);
-  background: var(--surface);
+  border-bottom: 1px solid rgb(28 28 28 / 9%);
+  background: transparent;
+}
+
+.stack-order-preview {
+  position: absolute;
+  right: 14px;
+  bottom: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  pointer-events: none;
 }
 
 .stack-header h3 {
@@ -556,6 +623,88 @@ kbd {
   border-color: var(--line-strong);
 }
 
+.stack-column.is-drop-possible,
+.open-block.is-drop-possible {
+  border-color: var(--drag-accent-line);
+  border-style: dashed;
+}
+
+.stack-column.is-drop-target,
+.open-block.is-drop-target {
+  border-color: var(--drag-accent);
+  background: var(--drag-accent-soft);
+  box-shadow: 0 0 0 2px rgb(63 105 117 / 10%);
+}
+
+.drop-preview {
+  position: relative;
+  min-height: 12px;
+  margin: -1px 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: transparent;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 12px;
+  text-align: center;
+  transition: min-height 140ms ease, line-height 140ms ease;
+}
+
+.drop-preview::before {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 9999px;
+  background: var(--drag-accent);
+  content: "";
+  transform: translateY(-50%);
+}
+
+.stack-column.is-drop-target .drop-preview,
+.open-block.is-drop-target .drop-preview {
+  min-height: 20px;
+  color: var(--drag-accent);
+  line-height: 20px;
+}
+
+.stack-column.is-drop-target .drop-preview::after,
+.open-block.is-drop-target .drop-preview::after {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  padding: 0 7px;
+  border: 1px solid rgb(63 105 117 / 22%);
+  border-radius: 9999px;
+  background: var(--surface);
+  content: "放这里";
+  font-size: 10px;
+  line-height: 18px;
+}
+
+.workspace-drop-zone {
+  display: grid;
+  min-height: 44px;
+  place-items: center;
+  margin-bottom: 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-card);
+  color: var(--muted);
+  background: rgb(252 251 248 / 72%);
+  font-size: 13px;
+  font-weight: 600;
+  transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease;
+}
+
+.workspace-drop-zone.is-active {
+  border-color: var(--charcoal);
+  color: var(--charcoal);
+  background: #f4f1ea;
+}
+
 .tab-list,
 .open-blocks,
 .result-groups {
@@ -566,9 +715,9 @@ kbd {
 .tab-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   flex: 0 1 auto;
-  padding: 10px;
+  padding: 9px;
 }
 
 .stack-board,
@@ -612,12 +761,12 @@ kbd {
   grid-template-columns: 24px minmax(0, 1fr);
   gap: 10px;
   width: 100%;
-  min-height: 68px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  min-height: 60px;
+  padding: 8px 9px;
+  border: 1px solid rgb(28 28 28 / 9%);
+  border-radius: 10px;
   color: var(--charcoal);
-  background: var(--cream);
+  background: var(--surface);
   cursor: pointer;
   text-align: left;
   transition:
@@ -633,12 +782,22 @@ kbd {
 
 .saved-tab:hover,
 .open-tab:hover {
-  border-color: var(--line-strong);
+  border-color: rgb(28 28 28 / 24%);
   background: var(--surface);
 }
 
+.saved-tab[draggable="true"],
+.open-tab[draggable="true"] {
+  cursor: grab;
+}
+
+.saved-tab[draggable="true"]:active,
+.open-tab[draggable="true"]:active {
+  cursor: grabbing;
+}
+
 .saved-tab.is-selected {
-  border-color: var(--line-strong);
+  border-color: rgb(28 28 28 / 24%);
   background: var(--surface);
 }
 
@@ -890,7 +1049,7 @@ kbd {
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   overflow-y: auto;
   padding-right: 2px;
 }
@@ -900,12 +1059,16 @@ kbd {
   flex: 0 0 auto;
   min-height: 0;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
   overflow: visible;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--cream);
+  padding: 6px;
+  border: 1px solid rgb(28 28 28 / 10%);
+  border-radius: 12px;
+  background: rgb(247 244 237 / 64%);
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .open-block-title {
@@ -913,18 +1076,18 @@ kbd {
   z-index: 1;
   top: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px;
+  grid-template-columns: minmax(0, 1fr) 24px;
   width: 100%;
   align-items: center;
-  gap: 6px;
-  padding: 7px 8px;
+  gap: 5px;
+  padding: 5px 6px;
   border: 0;
   border-radius: var(--radius-control);
   color: var(--charcoal);
   background: var(--surface);
   cursor: grab;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 560;
   letter-spacing: 0;
   text-align: left;
 }
@@ -937,7 +1100,7 @@ kbd {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .open-block-title-content > span {
@@ -948,12 +1111,12 @@ kbd {
 }
 
 .open-block-title .button-icon {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 
 .open-block-title:hover {
-  background: #f4f1ea;
+  background: rgb(28 28 28 / 4%);
 }
 
 .open-block.is-collapsed {
@@ -961,17 +1124,18 @@ kbd {
 }
 
 .open-tab {
-  grid-template-columns: 20px minmax(0, 1fr) 28px;
-  gap: 8px;
-  min-height: 48px;
-  padding: 7px 8px;
-  border-radius: 10px;
+  grid-template-columns: 20px minmax(0, 1fr) 24px;
+  gap: 7px;
+  min-height: 44px;
+  padding: 6px 7px;
+  border-radius: 8px;
+  background: transparent;
 }
 
 .open-row-close {
   display: inline-grid;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   align-self: center;
   place-items: center;
   border: 0;
@@ -1019,13 +1183,15 @@ kbd {
 }
 
 .open-tab strong {
-  font-size: 15px;
+  font-size: 14px;
+  font-weight: 540;
   line-height: 1.2;
 }
 
 .open-tab small {
   margin-top: 2px;
-  font-size: 13px;
+  color: var(--muted);
+  font-size: 11px;
   line-height: 1.3;
 }
 

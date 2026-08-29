@@ -13,13 +13,13 @@ MVP 已实现目标：
 - 支持搜索 saved 数据、当前打开 tabs、近 90 天 Chrome history。
 - 支持应用内搜索快捷键和 Chrome 全局搜索命令。
 - 支持关闭重复打开的 tabs、关闭单个 open tab、关闭整个 Chrome window。
-- 支持在不同 Chrome window block 之间拖动 open tab。
+- 支持在同一 Chrome window 内调整 open tab 顺序，也支持在不同 Chrome window block 之间拖动 open tab。
+- 支持拖动 open tab、Stack 和 Space 时展示可到达目标及插入位置。
 - 支持 JSON 导入/导出、本地目录自动备份和从最新备份恢复。
 
 规划中但尚未完整落地：
 
 - 批量读取真实网页 `meta description`，用于搜索增强。
-- 更细粒度的 saved tab 插入位置反馈。
 
 第一版暂不包含：
 
@@ -52,7 +52,7 @@ MVP 已实现目标：
 
 ### 2.3 当前实现状态
 
-- `Space`、`Stack`、`Saved Tab` 的 CRUD、排序、拖拽保存和本地持久化已实现。
+- `Space`、`Stack`、`Saved Tab` 的 CRUD、排序、拖拽保存和本地持久化已实现；Space 和 Stack 拖动时会显示目标与前后插入位置。
 - 新标签页三栏工作台、右侧 Open Tabs 浮窗、搜索弹窗、设置弹窗已实现。
 - Open Tabs 面板支持总数展示、折叠、刷新、窗口 block 折叠、关闭 tab/window、重复 tab 清理、清除已保存 tab、跨 window 移动 tab。
 - 数据管理支持 JSON 导出、JSON 导入替换、授权本地目录、自动写入 `latest.json`、从 `latest.json` 恢复。
@@ -74,6 +74,7 @@ MVP 已实现目标：
 - Space 支持重命名、删除。
 - 删除 space 前二次确认；删除只影响本地保存数据，不关闭真实 Chrome tabs。
 - Space 支持拖拽排序。
+- Space 拖动过程中，其他 Space 会显示可放置状态，目标 Space 根据指针位置显示前/后插入线。
 - 侧边栏提供设置入口。
 
 ### 3.2 搜索弹窗
@@ -144,6 +145,7 @@ Stack 操作：
 - Stack 标题区提供批量选择 saved tabs 入口。
 - 删除 stack 前二次确认；删除只影响本地保存数据，不关闭真实 Chrome tabs。
 - 按住并拖动 stack 标题：调整 stack 在当前 space 内的顺序。
+- Stack 拖动过程中显示可放置的 Stack 和前/后插入位置。
 - 拖动结束后立即持久化排序。
 
 Saved Tab 操作：
@@ -152,6 +154,7 @@ Saved Tab 操作：
 - 点击 saved tab 按“已开则切换，否则新开”规则打开。
 - 支持从一个 stack 拖动 tab 到同 stack 内重新排序。
 - 支持从一个 stack 拖动 tab 到另一个 stack，改变分类并插入目标位置。
+- Saved tab 拖动过程中显示目标 Stack 和插入位置。
 - 支持进入单个 stack 的选择模式，选择多个 saved tabs 后一次性删除。
 - 在单个 stack 的选择模式中，hover saved tab 时显示编辑入口；点击后弹窗编辑标题和 URL，保存后更新本地记录。
 - 同一个 URL 在同一 space 内只保存一份。
@@ -189,7 +192,8 @@ Saved Tab 操作：
   - 同 URL 在当前 space 已存在时，不重复创建，改为移动到新 stack。
 - 取消弹窗则不创建 stack，不保存 tabs。
 - 拖动一个 open tab 到另一个 window block：
-  - 调用 Chrome tabs move，将该 tab 移入目标 window 末尾。
+  - 调用 Chrome tabs move，将该 tab 移入目标 window 的指针位置；同一 window 内也可调整顺序。
+  - 拖动过程中显示可放置的 window block 和插入位置。
   - 移动后刷新 block 数量和列表。
 
 Open Tabs 操作：

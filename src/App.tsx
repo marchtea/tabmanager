@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   closeOpenTab,
   closeOpenWindow,
@@ -34,7 +34,15 @@ import {
   formatShortcutForPlatform,
   shortcutMatchesEvent
 } from "./domain/settings";
-import type { HistoryEntry, OpenTab, OpenTabBlock, SearchGroups, SearchResult, TabManagerSettings } from "./domain/types";
+import type {
+  HistoryEntry,
+  OpenTab,
+  OpenTabBlock,
+  SearchGroups,
+  SearchResult,
+  TabManagerSettings,
+  WorkspaceState
+} from "./domain/types";
 import {
   createIdGenerator,
   createSpace,
@@ -63,6 +71,13 @@ type DragPayload =
   | { type: "saved-tab"; tabId: string }
   | { type: "stack"; stackId: string }
   | { type: "space"; spaceId: string };
+
+type DropTarget =
+  | { type: "stack-tabs"; stackId: string; index: number }
+  | { type: "stack-order"; stackId: string; position: "before" | "after" }
+  | { type: "space-order"; spaceId: string; position: "before" | "after" }
+  | { type: "open-tabs"; windowId: number; index: number }
+  | { type: "workspace" };
 
 type IconName =
   | "chevron-right"
@@ -135,12 +150,16 @@ export const App = () => {
   const [tabSelectionStackId, setTabSelectionStackId] = useState<string>();
   const [selectedSavedTabIds, setSelectedSavedTabIds] = useState<ReadonlySet<string>>(() => new Set());
   const [editingSavedTabId, setEditingSavedTabId] = useState<string>();
+  const [activeDragPayload, setActiveDragPayload] = useState<DragPayload | undefined>(undefined);
+  const [dropTarget, setDropTarget] = useState<DropTarget | undefined>(undefined);
   const didHandleInitialUrlRef = useRef(false);
   const latestLocalStateRef = useRef<TabDockLocalStateV1 | undefined>(undefined);
   const skipNextLocalStateSaveRef = useRef(false);
   const forceNextLocalStateSaveRef = useRef(false);
   const scrollbarRevealTimersRef = useRef(new Map<HTMLElement, number>());
   const importInputRef = useRef<HTMLInputElement>(null);
+  const activeDragPayloadRef = useRef<DragPayload | undefined>(undefined);
+  const dropTargetRef = useRef<DropTarget | undefined>(undefined);
 
   const activeSpace = getActiveSpace(workspace);
   const activeStacks = activeSpace?.stackIds.map((id) => workspace.stacks[id]).filter(Boolean) ?? [];
@@ -626,15 +645,123 @@ export const App = () => {
     setDataStatus("已从本地备份恢复。");
   };
 
+  const updateDropTarget = (nextTarget: DropTarget | undefined) => {
+    dropTargetRef.current = nextTarget;
+    setDropTarget((currentTarget) => (sameDropTarget(currentTarget, nextTarget) ? currentTarget : nextTarget));
+  };
+
+  const startDragging = (event: React.DragEvent, payload: DragPayload) => {
+    activeDragPayloadRef.current = payload;
+    setActiveDragPayload(payload);
+    updateDropTarget(undefined);
+    writeDragPayload(event, payload);
+  };
+
+  const stopDragging = () => {
+    activeDragPayloadRef.current = undefined;
+    setActiveDragPayload(undefined);
+    updateDropTarget(undefined);
+  };
+
+  const getActiveDragPayload = (event: React.DragEvent): DragPayload | undefined =>
+    activeDragPayloadRef.current ?? readDragPayload(event);
+
+  const handleDragOverStack = (stackId: string, event: React.DragEvent) => {
+    const payload = getActiveDragPayload(event);
+    if (!payload || (payload.type !== "open-tab" && payload.type !== "saved-tab" && payload.type !== "stack")) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+
+    if (payload.type === "stack") {
+      if (!activeSpace || payload.stackId === stackId) {
+        updateDropTarget(undefined);
+        return;
+      }
+      const element = event.currentTarget.getBoundingClientRect();
+      updateDropTarget({
+        type: "stack-order",
+        stackId,
+        position: event.clientX > element.left + element.width / 2 ? "after" : "before"
+      });
+      return;
+    }
+
+    updateDropTarget({
+      type: "stack-tabs",
+      stackId,
+      index: getDropIndex((event.currentTarget as HTMLElement).querySelector<HTMLElement>(".tab-list"), event.clientY, ".saved-tab")
+    });
+  };
+
+  const handleDragOverWorkspace = (event: React.DragEvent) => {
+    const payload = getActiveDragPayload(event);
+    if (payload?.type !== "open-block") {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    updateDropTarget({ type: "workspace" });
+  };
+
+  const handleDragOverOpenBlock = (block: OpenTabBlock, event: React.DragEvent) => {
+    const payload = getActiveDragPayload(event);
+    if (payload?.type !== "open-tab") {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    updateDropTarget({
+      type: "open-tabs",
+      windowId: block.windowId,
+      index: getDropIndex(event.currentTarget as HTMLElement, event.clientY, ".open-tab")
+    });
+  };
+
+  const handleDragOverSpace = (spaceId: string, event: React.DragEvent) => {
+    const payload = getActiveDragPayload(event);
+    if (payload?.type !== "space") {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (payload.spaceId === spaceId) {
+      updateDropTarget(undefined);
+      return;
+    }
+
+    const row = (event.currentTarget as HTMLElement).querySelector<HTMLElement>(".space-row");
+    const element = row?.getBoundingClientRect();
+    if (!element) {
+      return;
+    }
+    updateDropTarget({
+      type: "space-order",
+      spaceId,
+      position: event.clientY > element.top + element.height / 2 ? "after" : "before"
+    });
+  };
+
+  const handleDragLeave = (event: React.DragEvent) => {
+    const relatedTarget = event.relatedTarget;
+    if (relatedTarget instanceof Node && (event.currentTarget as HTMLElement).contains(relatedTarget)) {
+      return;
+    }
+    updateDropTarget(undefined);
+  };
+
   const handleDropOnStack = (stackId: string, event: React.DragEvent) => {
     event.preventDefault();
     if (!activeSpace) {
       return;
     }
-    const payload = readDragPayload(event);
+    const payload = getActiveDragPayload(event);
     if (!payload) {
+      stopDragging();
       return;
     }
+    const target = dropTargetRef.current;
     if (payload.type === "open-tab") {
       setWorkspace((state) =>
         saveOpenTabToStack(
@@ -642,7 +769,9 @@ export const App = () => {
           activeSpace.id,
           stackId,
           payload.tab,
-          state.stacks[stackId]?.tabIds.length ?? 0,
+          target?.type === "stack-tabs" && target.stackId === stackId
+            ? target.index
+            : state.stacks[stackId]?.tabIds.length ?? 0,
           now,
           idGeneratorRef.current
         )
@@ -650,24 +779,38 @@ export const App = () => {
     }
     if (payload.type === "saved-tab") {
       setWorkspace((state) =>
-        moveSavedTab(state, activeSpace.id, payload.tabId, stackId, state.stacks[stackId]?.tabIds.length ?? 0, now)
+        moveSavedTab(
+          state,
+          activeSpace.id,
+          payload.tabId,
+          stackId,
+          getSavedTabDropIndex(state, payload.tabId, stackId, target),
+          now
+        )
       );
     }
     if (payload.type === "stack") {
       const targetIndex = activeSpace.stackIds.indexOf(stackId);
-      setWorkspace((state) => moveStack(state, activeSpace.id, payload.stackId, targetIndex, now));
+      const position = target?.type === "stack-order" && target.stackId === stackId ? target.position : "before";
+      setWorkspace((state) =>
+        moveStack(state, activeSpace.id, payload.stackId, targetIndex + (position === "after" ? 1 : 0), now)
+      );
     }
+    stopDragging();
   };
 
   const handleDropOnSpace = (targetSpaceId: string, event: React.DragEvent) => {
     event.preventDefault();
     event.stopPropagation();
-    const payload = readDragPayload(event);
+    const payload = getActiveDragPayload(event);
     if (payload?.type !== "space" || payload.spaceId === targetSpaceId) {
       return;
     }
     const targetIndex = orderedSpaces.findIndex((space) => space.id === targetSpaceId);
-    setWorkspace((state) => moveSpace(state, payload.spaceId, targetIndex, now));
+    const target = dropTargetRef.current;
+    const position = target?.type === "space-order" && target.spaceId === targetSpaceId ? target.position : "before";
+    setWorkspace((state) => moveSpace(state, payload.spaceId, targetIndex + (position === "after" ? 1 : 0), now));
+    stopDragging();
   };
 
   const handleDropOnWorkspace = (event: React.DragEvent) => {
@@ -675,7 +818,7 @@ export const App = () => {
     if (!activeSpace) {
       return;
     }
-    const payload = readDragPayload(event);
+    const payload = getActiveDragPayload(event);
     if (payload?.type !== "open-block") {
       return;
     }
@@ -690,24 +833,30 @@ export const App = () => {
     setWorkspace((state) =>
       saveOpenWindowAsStack(state, activeSpace.id, name, block.tabs, now, idGeneratorRef.current)
     );
+    stopDragging();
   };
 
   const handleDropOnOpenBlock = async (targetWindowId: number, event: React.DragEvent) => {
     event.preventDefault();
     event.stopPropagation();
 
-    const payload = readDragPayload(event);
-    if (payload?.type !== "open-tab" || payload.tab.windowId === targetWindowId) {
+    const payload = getActiveDragPayload(event);
+    if (payload?.type !== "open-tab") {
+      stopDragging();
       return;
     }
+    const target = dropTargetRef.current;
+    const targetIndex = target?.type === "open-tabs" && target.windowId === targetWindowId ? target.index : -1;
+    const adjustedTargetIndex = getOpenTabMoveIndex(openBlocks, payload.tab, targetWindowId, targetIndex);
 
     if (chromeApi) {
-      await moveOpenTabToWindow(chromeApi, payload.tab.id, targetWindowId);
+      await moveOpenTabToWindow(chromeApi, payload.tab.id, targetWindowId, adjustedTargetIndex);
       setOpenBlocks(await groupOpenTabs(chromeApi));
-      return;
+    } else {
+      setOpenBlocks((blocks) => moveOpenTabBetweenBlocks(blocks, payload.tab, targetWindowId, targetIndex));
     }
 
-    setOpenBlocks((blocks) => moveOpenTabBetweenBlocks(blocks, payload.tab, targetWindowId));
+    stopDragging();
   };
 
   const dedupeOpenTabs = async () => {
@@ -854,21 +1003,31 @@ export const App = () => {
         <nav className="space-list" aria-label="Spaces">
           {orderedSpaces.map((space) => (
             <section
-              className={`space-group ${space.id === activeSpace?.id ? "is-active" : ""}`}
+              className={`space-group ${space.id === activeSpace?.id ? "is-active" : ""} ${
+                activeDragPayload?.type === "space" && activeDragPayload.spaceId !== space.id ? "is-drop-possible" : ""
+              } ${
+                dropTarget?.type === "space-order" && dropTarget.spaceId === space.id ? "is-drop-target" : ""
+              }`}
               data-testid="space-group"
               key={space.id}
+              onDragOver={(event) => handleDragOverSpace(space.id, event)}
+              onDragLeave={handleDragLeave}
+              onDrop={(event) => handleDropOnSpace(space.id, event)}
             >
               <div
-                className={`space-row ${space.id === activeSpace?.id ? "is-active" : ""}`}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => handleDropOnSpace(space.id, event)}
+                className={`space-row ${space.id === activeSpace?.id ? "is-active" : ""} ${
+                  dropTarget?.type === "space-order" && dropTarget.spaceId === space.id
+                    ? `is-drop-target is-drop-${dropTarget.position}`
+                    : ""
+                }`}
               >
                 <button
                   data-testid="space-title"
                   draggable
                   type="button"
                   onClick={() => setActiveSpace(space.id)}
-                  onDragStart={(event) => writeDragPayload(event, { type: "space", spaceId: space.id })}
+                  onDragStart={(event) => startDragging(event, { type: "space", spaceId: space.id })}
+                  onDragEnd={stopDragging}
                 >
                   {space.name}
                 </button>
@@ -890,6 +1049,9 @@ export const App = () => {
                 >
                   <Icon name="trash" />
                 </button>
+                {dropTarget?.type === "space-order" && dropTarget.spaceId === space.id && (
+                  <span className="space-drop-indicator" data-testid="space-drop-preview" aria-hidden="true" />
+                )}
               </div>
               {space.id === activeSpace?.id && (
                 <div className="stack-tree">
@@ -908,9 +1070,10 @@ export const App = () => {
       <section
         className={`workspace ${activeStacks.length > 0 ? "has-stacks" : ""} ${
           isOpenTabsPanelCollapsed ? "is-open-tabs-collapsed" : ""
-        }`}
+        } ${dropTarget?.type === "workspace" ? "is-drop-target" : ""}`}
         data-testid="workspace"
-        onDragOver={(event) => event.preventDefault()}
+        onDragOver={handleDragOverWorkspace}
+        onDragLeave={handleDragLeave}
         onDrop={handleDropOnWorkspace}
       >
         <header className="workspace-header">
@@ -932,6 +1095,12 @@ export const App = () => {
             <Icon name="plus" />
           </button>
         </header>
+
+        {activeDragPayload?.type === "open-block" && (
+          <div className={`workspace-drop-zone ${dropTarget?.type === "workspace" ? "is-active" : ""}`}>
+            <span>拖到这里创建 Stack</span>
+          </div>
+        )}
 
         {!activeSpace && (
           <div className="empty-state">
@@ -956,18 +1125,28 @@ export const App = () => {
             const isSelectingThisStack = tabSelectionStackId === stack.id;
             return (
             <article
-              className={`stack-column ${isSelectingThisStack ? "is-selecting-tabs" : ""}`}
+              className={`stack-column ${isSelectingThisStack ? "is-selecting-tabs" : ""} ${
+                activeDragPayload?.type === "open-tab" || activeDragPayload?.type === "saved-tab" || activeDragPayload?.type === "stack"
+                  ? "is-drop-possible"
+                  : ""
+              } ${
+                (dropTarget?.type === "stack-tabs" || dropTarget?.type === "stack-order") && dropTarget.stackId === stack.id
+                  ? "is-drop-target"
+                  : ""
+              }`}
               data-testid="stack-column"
               id={`stack-${stack.id}`}
               key={stack.id}
-              onDragOver={(event) => event.preventDefault()}
+              onDragOver={(event) => handleDragOverStack(stack.id, event)}
+              onDragLeave={handleDragLeave}
               onDrop={(event) => handleDropOnStack(stack.id, event)}
             >
               <header
                 className="stack-header"
                 data-testid="stack-header"
                 draggable
-                onDragStart={(event) => writeDragPayload(event, { type: "stack", stackId: stack.id })}
+                onDragStart={(event) => startDragging(event, { type: "stack", stackId: stack.id })}
+                onDragEnd={stopDragging}
               >
                 <div className="stack-title">
                   <h3>{stack.name}</h3>
@@ -975,6 +1154,11 @@ export const App = () => {
                     <p className="stack-selection-count">{selectedSavedTabIds.size} selected</p>
                   )}
                 </div>
+                {dropTarget?.type === "stack-order" && dropTarget.stackId === stack.id && (
+                  <span className="stack-order-preview" data-testid="stack-drop-preview">
+                    放到{dropTarget.position === "before" ? "前面" : "后面"}
+                  </span>
+                )}
                 <div className={`stack-actions ${isSelectingThisStack ? "is-active" : ""}`}>
                   {isSelectingThisStack ? (
                     <>
@@ -1025,50 +1209,54 @@ export const App = () => {
                 </div>
               </header>
               <div className="tab-list" onScroll={revealTransientScrollbar}>
-                {stack.tabIds.map((tabId) => {
+                {stack.tabIds.map((tabId, tabIndex) => {
                   const tab = workspace.tabs[tabId];
                   if (!tab) {
                     return null;
                   }
                   const isSelectedSavedTab = isSelectingThisStack && selectedSavedTabIds.has(tab.id);
                   return (
-                    <div
-                      aria-pressed={isSelectingThisStack ? isSelectedSavedTab : undefined}
-                      className={`saved-tab ${isSelectingThisStack ? "is-select-mode" : ""} ${
-                        isSelectedSavedTab ? "is-selected" : ""
-                      }`}
-                      data-testid="saved-tab"
-                      draggable={!isSelectingThisStack}
-                      key={tab.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => {
-                        if (isSelectingThisStack) {
-                          toggleSavedTabSelection(stack.id, tab.id);
-                          return;
-                        }
-                        void openUrl(tab.url);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter" && event.key !== " ") {
-                          return;
-                        }
-                        event.preventDefault();
-                        if (isSelectingThisStack) {
-                          toggleSavedTabSelection(stack.id, tab.id);
-                          return;
-                        }
-                        void openUrl(tab.url);
-                      }}
-                      onDragStart={(event) => {
-                        if (isSelectingThisStack) {
+                    <Fragment key={tab.id}>
+                      {dropTarget?.type === "stack-tabs" && dropTarget.stackId === stack.id && dropTarget.index === tabIndex && (
+                        <div className="drop-preview" data-testid="stack-drop-preview">放置在这里</div>
+                      )}
+                      <div
+                        aria-pressed={isSelectingThisStack ? isSelectedSavedTab : undefined}
+                        className={`saved-tab ${isSelectingThisStack ? "is-select-mode" : ""} ${
+                          isSelectedSavedTab ? "is-selected" : ""
+                        }`}
+                        data-testid="saved-tab"
+                        draggable={!isSelectingThisStack}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {
+                          if (isSelectingThisStack) {
+                            toggleSavedTabSelection(stack.id, tab.id);
+                            return;
+                          }
+                          void openUrl(tab.url);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Enter" && event.key !== " ") {
+                            return;
+                          }
                           event.preventDefault();
-                          return;
-                        }
-                        event.stopPropagation();
-                        writeDragPayload(event, { type: "saved-tab", tabId: tab.id });
-                      }}
-                    >
+                          if (isSelectingThisStack) {
+                            toggleSavedTabSelection(stack.id, tab.id);
+                            return;
+                          }
+                          void openUrl(tab.url);
+                        }}
+                        onDragStart={(event) => {
+                          if (isSelectingThisStack) {
+                            event.preventDefault();
+                            return;
+                          }
+                          event.stopPropagation();
+                          startDragging(event, { type: "saved-tab", tabId: tab.id });
+                        }}
+                        onDragEnd={stopDragging}
+                      >
                       <span className="saved-tab-leading">
                         {isSelectingThisStack ? (
                           <span className={`saved-tab-checkbox ${isSelectedSavedTab ? "is-checked" : ""}`} aria-hidden="true">
@@ -1097,9 +1285,13 @@ export const App = () => {
                           <Icon name="edit" />
                         </button>
                       )}
-                    </div>
+                      </div>
+                    </Fragment>
                   );
                 })}
+                {dropTarget?.type === "stack-tabs" && dropTarget.stackId === stack.id && dropTarget.index >= stack.tabIds.length && (
+                  <div className="drop-preview" data-testid="stack-drop-preview">放置在末尾</div>
+                )}
                 {stack.tabIds.length === 0 && <p className="drop-hint">从右侧拖入 Tab</p>}
               </div>
             </article>
@@ -1175,13 +1367,15 @@ export const App = () => {
         <div className="open-blocks">
           {openBlocks.map((block) => (
             <section
-              className={`open-block ${collapsedOpenBlockIds.has(block.windowId) ? "is-collapsed" : ""}`}
+              className={`open-block ${collapsedOpenBlockIds.has(block.windowId) ? "is-collapsed" : ""} ${
+                activeDragPayload?.type === "open-tab" ? "is-drop-possible" : ""
+              } ${
+                dropTarget?.type === "open-tabs" && dropTarget.windowId === block.windowId ? "is-drop-target" : ""
+              }`}
               data-testid="open-block"
               key={block.windowId}
-              onDragOver={(event) => {
-                event.preventDefault();
-                event.dataTransfer.dropEffect = "move";
-              }}
+              onDragOver={(event) => handleDragOverOpenBlock(block, event)}
+              onDragLeave={handleDragLeave}
               onDrop={(event) => void handleDropOnOpenBlock(block.windowId, event)}
             >
               <div
@@ -1198,7 +1392,8 @@ export const App = () => {
                     toggleOpenBlock(block.windowId);
                   }
                 }}
-                onDragStart={(event) => writeDragPayload(event, { type: "open-block", windowId: block.windowId })}
+                onDragStart={(event) => startDragging(event, { type: "open-block", windowId: block.windowId })}
+                onDragEnd={stopDragging}
               >
                 <span className="open-block-title-content">
                   <Icon name={collapsedOpenBlockIds.has(block.windowId) ? "chevron-right" : "chevron-down"} />
@@ -1215,42 +1410,50 @@ export const App = () => {
                 </button>
               </div>
               {!collapsedOpenBlockIds.has(block.windowId) &&
-                block.tabs.map((tab) => (
-                  <div
-                    className="open-tab"
-                    data-testid="open-tab"
-                    draggable
-                    key={`${tab.windowId}:${tab.id}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => void openUrl(tab.url)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        void openUrl(tab.url);
-                      }
-                    }}
-                    onDragStart={(event) => {
-                      event.stopPropagation();
-                      writeDragPayload(event, { type: "open-tab", tab });
-                    }}
-                  >
-                    <span className="favicon">{tab.faviconUrl ? <img src={tab.faviconUrl} alt="" /> : <Icon name="link" />}</span>
-                    <span>
-                      <strong>{tab.title}</strong>
-                      <small>{tab.url}</small>
-                    </span>
-                    <button
-                      className="open-row-close"
-                      data-testid="close-open-tab"
-                      type="button"
-                      title="关闭 Tab"
-                      onClick={(event) => void handleCloseOpenTab(tab, event)}
+                block.tabs.map((tab, tabIndex) => (
+                  <Fragment key={`${tab.windowId}:${tab.id}`}>
+                    {dropTarget?.type === "open-tabs" && dropTarget.windowId === block.windowId && dropTarget.index === tabIndex && (
+                      <div className="drop-preview" data-testid="open-tab-drop-preview">放置在这里</div>
+                    )}
+                    <div
+                      className="open-tab"
+                      data-testid="open-tab"
+                      draggable
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => void openUrl(tab.url)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          void openUrl(tab.url);
+                        }
+                      }}
+                      onDragStart={(event) => {
+                        event.stopPropagation();
+                        startDragging(event, { type: "open-tab", tab });
+                      }}
+                      onDragEnd={stopDragging}
                     >
-                      <Icon name="trash" />
-                    </button>
-                  </div>
+                      <span className="favicon">{tab.faviconUrl ? <img src={tab.faviconUrl} alt="" /> : <Icon name="link" />}</span>
+                      <span>
+                        <strong>{tab.title}</strong>
+                        <small>{tab.url}</small>
+                      </span>
+                      <button
+                        className="open-row-close"
+                        data-testid="close-open-tab"
+                        type="button"
+                        title="关闭 Tab"
+                        onClick={(event) => void handleCloseOpenTab(tab, event)}
+                      >
+                        <Icon name="trash" />
+                      </button>
+                    </div>
+                  </Fragment>
                 ))}
+              {!collapsedOpenBlockIds.has(block.windowId) && dropTarget?.type === "open-tabs" && dropTarget.windowId === block.windowId && dropTarget.index >= block.tabs.length && (
+                <div className="drop-preview" data-testid="open-tab-drop-preview">放置在末尾</div>
+              )}
             </section>
           ))}
         </div>
@@ -1720,13 +1923,33 @@ const buildGoogleSearchUrl = (query: string): string =>
 const moveOpenTabBetweenBlocks = (
   blocks: OpenTabBlock[],
   tab: OpenTab,
-  targetWindowId: number
+  targetWindowId: number,
+  targetIndex = -1
 ): OpenTabBlock[] => {
   const sourceWindowId = tab.windowId;
   const hasSourceBlock = blocks.some((block) => block.windowId === sourceWindowId);
   const hasTargetBlock = blocks.some((block) => block.windowId === targetWindowId);
-  if (!hasSourceBlock || !hasTargetBlock || sourceWindowId === targetWindowId) {
+  if (!hasSourceBlock || !hasTargetBlock) {
     return blocks;
+  }
+
+  if (sourceWindowId === targetWindowId) {
+    return blocks.map((block) => {
+      if (block.windowId !== targetWindowId) {
+        return block;
+      }
+      const sourceIndex = block.tabs.findIndex((item) => item.id === tab.id);
+      if (sourceIndex < 0) {
+        return block;
+      }
+      const tabs = block.tabs.filter((item) => item.id !== tab.id);
+      const insertionIndex = clampIndex(
+        targetIndex < 0 ? tabs.length : targetIndex - (sourceIndex < targetIndex ? 1 : 0),
+        tabs.length
+      );
+      tabs.splice(insertionIndex, 0, tab);
+      return { ...block, tabs };
+    });
   }
 
   return blocks
@@ -1736,10 +1959,16 @@ const moveOpenTabBetweenBlocks = (
         return tabs.length > 0 ? [{ ...block, tabs }] : [];
       }
       if (block.windowId === targetWindowId) {
+        const targetTabs = block.tabs.filter((item) => item.id !== tab.id);
+        const insertionIndex = clampIndex(targetIndex < 0 ? targetTabs.length : targetIndex, targetTabs.length);
         return [
           {
             ...block,
-            tabs: [...block.tabs.filter((item) => item.id !== tab.id), { ...tab, windowId: targetWindowId }]
+            tabs: [
+              ...targetTabs.slice(0, insertionIndex),
+              { ...tab, windowId: targetWindowId },
+              ...targetTabs.slice(insertionIndex)
+            ]
           }
         ];
       }
@@ -1767,6 +1996,68 @@ const writeDragPayload = (event: React.DragEvent, payload: DragPayload) => {
   event.dataTransfer.effectAllowed = "move";
   event.dataTransfer.setData("application/json", JSON.stringify(payload));
 };
+
+const sameDropTarget = (left: DropTarget | undefined, right: DropTarget | undefined): boolean => {
+  if (!left || !right || left.type !== right.type) {
+    return !left && !right;
+  }
+  if (left.type === "stack-tabs" && right.type === "stack-tabs") {
+    return left.stackId === right.stackId && left.index === right.index;
+  }
+  if (left.type === "stack-order" && right.type === "stack-order") {
+    return left.stackId === right.stackId && left.position === right.position;
+  }
+  if (left.type === "space-order" && right.type === "space-order") {
+    return left.spaceId === right.spaceId && left.position === right.position;
+  }
+  if (left.type === "open-tabs" && right.type === "open-tabs") {
+    return left.windowId === right.windowId && left.index === right.index;
+  }
+  return true;
+};
+
+const getDropIndex = (container: HTMLElement | null, clientY: number, selector: string): number => {
+  if (!container) {
+    return 0;
+  }
+  const items = [...container.querySelectorAll<HTMLElement>(selector)];
+  const itemIndex = items.findIndex((item) => clientY < item.getBoundingClientRect().top + item.getBoundingClientRect().height / 2);
+  return itemIndex >= 0 ? itemIndex : items.length;
+};
+
+const getSavedTabDropIndex = (
+  state: WorkspaceState,
+  tabId: string,
+  stackId: string,
+  target: DropTarget | undefined
+): number => {
+  const stack = state.stacks[stackId];
+  if (!stack) {
+    return 0;
+  }
+  const requestedIndex = target?.type === "stack-tabs" && target.stackId === stackId ? target.index : stack.tabIds.length;
+  const sourceIndex = stack.tabIds.indexOf(tabId);
+  return clampIndex(requestedIndex - (sourceIndex >= 0 && sourceIndex < requestedIndex ? 1 : 0), stack.tabIds.length);
+};
+
+const getOpenTabMoveIndex = (
+  blocks: OpenTabBlock[],
+  tab: OpenTab,
+  targetWindowId: number,
+  targetIndex: number
+): number => {
+  const targetBlock = blocks.find((block) => block.windowId === targetWindowId);
+  if (!targetBlock) {
+    return -1;
+  }
+  if (targetIndex < 0) {
+    return -1;
+  }
+  const sourceIndex = targetBlock.tabs.findIndex((item) => item.id === tab.id);
+  return clampIndex(targetIndex - (sourceIndex >= 0 && sourceIndex < targetIndex ? 1 : 0), targetBlock.tabs.length);
+};
+
+const clampIndex = (index: number, length: number): number => Math.max(0, Math.min(index, length));
 
 const readDragPayload = (event: React.DragEvent): DragPayload | undefined => {
   try {

@@ -112,9 +112,10 @@ export const focusOrOpenTabManager = async (
 export const moveOpenTabToWindow = async (
   chromeApi: ChromeLike,
   tabId: number,
-  targetWindowId: number
+  targetWindowId: number,
+  targetIndex = -1
 ): Promise<void> => {
-  await chromeApi.tabs?.move?.(tabId, { windowId: targetWindowId, index: -1 });
+  await chromeApi.tabs?.move?.(tabId, { windowId: targetWindowId, index: targetIndex });
 };
 
 export const closeOpenTab = async (chromeApi: ChromeLike, tabId: number): Promise<void> => {

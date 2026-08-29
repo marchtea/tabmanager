@@ -170,6 +170,18 @@ describe("chrome api adapter", () => {
     expect(chrome.tabs.move).toHaveBeenCalledWith(4, { windowId: 12, index: -1 });
   });
 
+  it("moves an open tab to an explicit position within a Chrome window", async () => {
+    const chrome = {
+      tabs: {
+        move: vi.fn().mockResolvedValue({})
+      }
+    } satisfies ChromeLike;
+
+    await moveOpenTabToWindow(chrome, 4, 12, 2);
+
+    expect(chrome.tabs.move).toHaveBeenCalledWith(4, { windowId: 12, index: 2 });
+  });
+
   it("ignores open tab window moves when the Chrome move API is unavailable", async () => {
     await expect(moveOpenTabToWindow({}, 4, 12)).resolves.toBeUndefined();
   });
